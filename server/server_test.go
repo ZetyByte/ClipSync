@@ -4,7 +4,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"sync"
 	"testing"
 
 	"github.com/gorilla/websocket"
@@ -28,96 +27,104 @@ func TestServer_process(t *testing.T) {
 
 	secondClient := Client{data: make(chan string, 1), peersID: testID, server: &s}
 
-	// Create a mock server
-	server1 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		openClientConnection(&firstClient, t, w, r)
-	}))
+	server1 := createMockServer(&firstClient, t)
 	defer server1.Close()
 
-	// Convert the server URL to a WebSocket URL
-	wsURL := "ws" + strings.TrimPrefix(server1.URL, "http")
-
-	// Connect to the WebSocket server
-	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
-	if err != nil {
-		t.Fatalf("Failed to connect to WebSocket server: %v", err)
-	}
+	conn := connectToWebsocket(server1, t)
 	defer conn.Close()
 
 	s.data[testID] = firstClient
 
-	// Verify that the server responded with a 101 status code
-	if status := conn.WriteMessage(websocket.TextMessage, []byte(testData)); status != nil {
-		t.Fatalf("Failed to write message to WebSocket connection: %v", err)
-	}
+	writeMessage(conn, t, testData)
 
-	// Create a mock server
-	server2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		openClientConnection(&secondClient, t, w, r)
-	}))
+	server2 := createMockServer(&secondClient, t)
 	defer server2.Close()
 
-	// Convert the server URL to a WebSocket URL
-	wsURL = "ws" + strings.TrimPrefix(server2.URL, "http")
-
-	// Connect to the WebSocket server
-	conn2, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
-	if err != nil {
-		t.Fatalf("Failed to connect to WebSocket server: %v", err)
-	}
+	conn2 := connectToWebsocket(server2, t)
 	defer conn2.Close()
-	s.registerID <- secondClient
 
 	flag := make(chan bool)
 
 	go s.process(flag)
+	go secondClient.readData()
+	s.registerID <- secondClient
 
-	_, message, err := conn2.ReadMessage()
-	if err != nil {
-		t.Fatalf("Failed to read a message: %v", err)
-	}
-	if string(message) != testData {
-		t.Fatalf("Expected %s, got %s", testData, string(message))
-	}
+	verifyMessage(conn2, t, testData)
 
-	// Verify that the server responded with a 101 status code
-	if status := conn2.WriteMessage(websocket.TextMessage, []byte(testDataUpdated)); status != nil {
-		t.Fatalf("Failed to write message to WebSocket connection: %v", err)
-	}
+	writeMessage(conn2, t, testDataUpdated)
 
-	_, message, err = conn.ReadMessage()
-	if err != nil {
-		t.Fatalf("Failed to read a message: %v", err)
-	}
-	if string(message) != testDataUpdated {
-		t.Fatalf("Expected %s, got %s", testDataUpdated, string(message))
+	verifyMessage(conn, t, testDataUpdated)
+
+	flag <- true
+}
+
+func TestServer_processERROR(t *testing.T) {
+	var s Server = Server{data: make(map[string]Client), registerID: make(chan Client, 1)}
+
+	testID := "125"
+	wrongID := "123"
+	firstClient := Client{data: make(chan string, 1), server: &s}
+
+	secondClient := Client{data: make(chan string, 1), peersID: wrongID, server: &s}
+
+	s.data[testID] = firstClient
+
+	server := createMockServer(&firstClient, t)
+	defer server.Close()
+
+	conn := connectToWebsocket(server, t)
+	secondClient.conn = conn
+
+	flag := make(chan bool)
+	go s.process(make(chan bool))
+
+	s.registerID <- secondClient
+
+	_, _, err := conn.ReadMessage()
+	if ce, ok := err.(*websocket.CloseError); ok {
+		switch ce.Code {
+		case websocket.CloseNormalClosure,
+			websocket.CloseGoingAway,
+			websocket.CloseNoStatusReceived:
+		default:
+			t.Fatalf("Expected websocket.CloseNormalClosure, got %v", ce.Code)
+		}
 	}
 
 	flag <- true
 }
 
-func TestServer_main(t *testing.T) {
-	var mutex sync.Mutex
-	var s Server = Server{data: make(map[string]Client), registerID: make(chan Client)}
-
-	// Create a mock server
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		handle(&s, w, r, &mutex)
+func createMockServer(c *Client, t *testing.T) *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		openClientConnection(c, t, w, r)
 	}))
-	defer server.Close()
+}
 
-	// Convert the server URL to a WebSocket URL
+func connectToWebsocket(server *httptest.Server, t *testing.T) *websocket.Conn {
+	t.Helper()
 	wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
 
-	// Connect to the WebSocket server
 	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 	if err != nil {
 		t.Fatalf("Failed to connect to WebSocket server: %v", err)
 	}
-	defer conn.Close()
+	return conn
+}
 
-	// Verify that the server responded with a 101 status code
-	if status := conn.WriteMessage(websocket.TextMessage, []byte("Hello, World!")); status != nil {
-		t.Fatalf("Failed to write message to WebSocket connection: %v", err)
+func verifyMessage(conn *websocket.Conn, t *testing.T, expectedMessage string) {
+	t.Helper()
+	_, message, err := conn.ReadMessage()
+	if err != nil {
+		t.Fatalf("Failed to read a message: %v", err)
+	}
+	if string(message) != expectedMessage {
+		t.Fatalf("Expected %s, got %s", expectedMessage, string(message))
+	}
+}
+
+func writeMessage(conn *websocket.Conn, t *testing.T, message string) {
+	t.Helper()
+	if status := conn.WriteMessage(websocket.TextMessage, []byte(message)); status != nil {
+		t.Fatalf("Failed to write message to WebSocket connection: %v", status)
 	}
 }

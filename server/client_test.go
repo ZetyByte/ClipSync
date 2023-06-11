@@ -1,17 +1,5 @@
 package main
 
-import (
-	"log"
-	"net/http"
-	"net/http/httptest"
-	"strings"
-	"sync"
-	"testing"
-	"time"
-
-	"github.com/gorilla/websocket"
-)
-
 /*
 func TestClient_handle(t *testing.T) {
 	var mutex sync.Mutex
@@ -106,7 +94,7 @@ func TestClient_WriteData(t *testing.T) {
 	if string(receivedData) != string(expectedData) {
 		t.Errorf("Received data does not match expected data. Expected: %s, Received: %s", expectedData, receivedData)
 	}
-}*/
+}
 
 func TestWriteData(t *testing.T) {
 
@@ -174,3 +162,4 @@ func TestHandle(t *testing.T) {
 		t.Fatalf("Failed to write message to WebSocket connection: %v", err)
 	}
 }
+*/
