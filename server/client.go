@@ -28,9 +28,11 @@ type Client struct {
 
 	conn *websocket.Conn
 
-	data chan string
+	sendMessage chan string
 
 	peersID string
+
+	pair *Client
 }
 
 var upgrader = websocket.Upgrader{
@@ -39,27 +41,29 @@ var upgrader = websocket.Upgrader{
 }
 
 // Writes data to websocket.
-func (c *Client) writeData(data string) {
-	c.conn.SetWriteDeadline(time.Now().Add(writeWait))
-	err := c.conn.WriteMessage(websocket.TextMessage, []byte(data))
-	if err != nil {
-		log.Println(err)
-		return
-	}
-}
-
-func (c *Client) sendPings() {
-	ticker := time.NewTicker(pingPeriod)
-	defer ticker.Stop()
-
+func (c *Client) writeData() {
 	for {
-		select {
-		case <-ticker.C:
+		if c.pair != nil {
+			message := <-c.pair.sendMessage
 			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
-			if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+			err := c.conn.WriteMessage(websocket.TextMessage, []byte(message))
+			if err != nil {
 				log.Println(err)
 				return
 			}
+		}
+	}
+}
+
+func (c *Client) sendPing() {
+	ticker := time.NewTicker(pingPeriod)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		c.conn.SetWriteDeadline(time.Now().Add(writeWait))
+		if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+			log.Println(err)
+			return
 		}
 	}
 }
@@ -74,7 +78,7 @@ func (c *Client) readData() {
 			log.Println(err)
 			return
 		}
-		c.data <- string(message)
+		c.sendMessage <- string(message)
 	}
 }
 
@@ -86,7 +90,7 @@ func handle(s *Server, w http.ResponseWriter, r *http.Request, m *sync.Mutex) {
 		return
 	}
 	conn.SetReadLimit(maxMessageSize)
-	client := Client{server: s, conn: conn, data: make(chan string)}
+	client := Client{server: s, conn: conn, sendMessage: make(chan string)}
 
 	// Read ID from query.
 	// If ID is empty, then it is the first client, it is added to the map of clients using its ID from header
@@ -95,12 +99,13 @@ func handle(s *Server, w http.ResponseWriter, r *http.Request, m *sync.Mutex) {
 	if id := r.URL.Query().Get("id"); id == "" {
 		id = r.Header.Get("Client-ID")
 		m.Lock()
-		s.data[id] = client
+		s.data[id] = &client
 		m.Unlock()
 	} else {
 		client.peersID = id
-		s.registerID <- client
+		s.registerID <- &client
 	}
 	go client.readData()
-	go client.sendPings()
+	go client.writeData()
+	go client.sendPing()
 }

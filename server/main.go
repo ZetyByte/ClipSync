@@ -7,7 +7,7 @@ import (
 
 func main() {
 	var mutex sync.Mutex
-	var server Server = Server{data: make(map[string]Client), registerID: make(chan Client)}
+	var server Server = Server{data: make(map[string]*Client), registerID: make(chan *Client)}
 
 	flag := make(chan bool)
 

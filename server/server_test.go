@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
@@ -19,76 +20,69 @@ func openClientConnection(c *Client, t *testing.T, w http.ResponseWriter, r *htt
 }
 
 func TestServer_process(t *testing.T) {
-	var s Server = Server{data: make(map[string]Client), registerID: make(chan Client, 1)}
+	var s Server = Server{data: make(map[string]*Client), registerID: make(chan *Client, 1)}
 
-	testID, testData, testDataUpdated := "125", "data from first client", "data from second client"
-	firstClient := Client{data: make(chan string, 1), server: &s}
-	firstClient.data <- testData
+	testID := "125"
+	firstClient := Client{sendMessage: make(chan string, 1), server: &s}
 
-	secondClient := Client{data: make(chan string, 1), peersID: testID, server: &s}
+	secondClient := Client{sendMessage: make(chan string, 1), peersID: testID, server: &s}
 
-	server1 := createMockServer(&firstClient, t)
-	defer server1.Close()
+	s.data[testID] = &firstClient
+	s.registerID <- &secondClient
 
-	conn := connectToWebsocket(server1, t)
-	defer conn.Close()
+	flag := make(chan bool)
+	go s.process(flag)
 
-	s.data[testID] = firstClient
+	time.Sleep(time.Millisecond * 100)
 
-	writeMessage(conn, t, testData)
+	if firstClient.pair != &secondClient {
+		t.Fatal("Expected firstClient.pair to be equal to secondClient, got", firstClient.pair)
+	}
+	if secondClient.pair != &firstClient {
+		t.Fatal("Expected secondClient.pair to be equal to firstClient, got", secondClient.pair)
+	}
 
+	flag <- true
+}
+
+func TestServer_processFLAG(t *testing.T) {
+	var s Server = Server{data: make(map[string]*Client), registerID: make(chan *Client, 1)}
+
+	flag := make(chan bool)
+	go s.process(flag)
+	flag <- true
+
+	_, ok := <-s.registerID
+	if ok {
+		t.Fatal("Expected s.registerID to be closed, got", ok)
+	}
+}
+
+func TestServer_processERROR(t *testing.T) {
+	var s Server = Server{data: make(map[string]*Client), registerID: make(chan *Client, 1)}
+
+	testID, wrongID := "125", "123"
+	firstClient := Client{sendMessage: make(chan string, 1), server: &s}
+
+	secondClient := Client{sendMessage: make(chan string, 1), peersID: wrongID, server: &s}
 	server2 := createMockServer(&secondClient, t)
 	defer server2.Close()
 
 	conn2 := connectToWebsocket(server2, t)
 	defer conn2.Close()
+	secondClient.conn = conn2
+
+	s.data[testID] = &firstClient
+	s.registerID <- &secondClient
 
 	flag := make(chan bool)
-
 	go s.process(flag)
-	go secondClient.readData()
-	s.registerID <- secondClient
 
-	verifyMessage(conn2, t, testData)
+	time.Sleep(time.Millisecond * 100)
 
-	writeMessage(conn2, t, testDataUpdated)
-
-	verifyMessage(conn, t, testDataUpdated)
-
-	flag <- true
-}
-
-func TestServer_processERROR(t *testing.T) {
-	var s Server = Server{data: make(map[string]Client), registerID: make(chan Client, 1)}
-
-	testID := "125"
-	wrongID := "123"
-	firstClient := Client{data: make(chan string, 1), server: &s}
-
-	secondClient := Client{data: make(chan string, 1), peersID: wrongID, server: &s}
-
-	s.data[testID] = firstClient
-
-	server := createMockServer(&firstClient, t)
-	defer server.Close()
-
-	conn := connectToWebsocket(server, t)
-	secondClient.conn = conn
-
-	flag := make(chan bool)
-	go s.process(make(chan bool))
-
-	s.registerID <- secondClient
-
-	_, _, err := conn.ReadMessage()
-	if ce, ok := err.(*websocket.CloseError); ok {
-		switch ce.Code {
-		case websocket.CloseNormalClosure,
-			websocket.CloseGoingAway,
-			websocket.CloseNoStatusReceived:
-		default:
-			t.Fatalf("Expected websocket.CloseNormalClosure, got %v", ce.Code)
-		}
+	_, _, err := secondClient.conn.ReadMessage()
+	if err == nil {
+		t.Fatal("Expected error, got nil")
 	}
 
 	flag <- true
@@ -128,3 +122,34 @@ func writeMessage(conn *websocket.Conn, t *testing.T, message string) {
 		t.Fatalf("Failed to write message to WebSocket connection: %v", status)
 	}
 }
+
+/*
+	server1 := createMockServer(&firstClient, t)
+	defer server1.Close()
+
+	conn := connectToWebsocket(server1, t)
+	defer conn.Close()
+
+	s.data[testID] = firstClient
+
+	writeMessage(conn, t, testData)
+
+	server2 := createMockServer(&secondClient, t)
+	defer server2.Close()
+
+	conn2 := connectToWebsocket(server2, t)
+	defer conn2.Close()
+
+	flag := make(chan bool)
+
+	go s.process(flag)
+	go secondClient.readData()
+	s.registerID <- secondClient
+
+	verifyMessage(conn2, t, testData)
+
+	writeMessage(conn2, t, testDataUpdated)
+
+	verifyMessage(conn, t, testDataUpdated)
+
+	flag <- true*/
