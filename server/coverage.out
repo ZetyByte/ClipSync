@@ -3,7 +3,7 @@ server/client.go:44.30,45.6 1 1
 server/client.go:45.6,46.20 1 1
 server/client.go:46.20,50.18 4 1
 server/client.go:50.18,53.5 2 0
-server/client.go:58.29,62.21 3 0
+server/client.go:58.29,62.21 3 1
 server/client.go:62.21,64.73 2 0
 server/client.go:64.73,67.4 2 0
 server/client.go:72.29,74.43 2 1
@@ -12,12 +12,12 @@ server/client.go:75.2,75.6 1 1
 server/client.go:75.6,77.17 2 1
 server/client.go:77.17,80.4 2 1
 server/client.go:81.3,81.35 1 1
-server/client.go:86.79,88.16 2 0
+server/client.go:86.79,88.16 2 1
 server/client.go:88.16,91.3 2 0
-server/client.go:92.2,99.45 3 0
-server/client.go:99.45,104.3 4 0
-server/client.go:104.8,107.3 2 0
-server/client.go:108.2,110.22 3 0
+server/client.go:92.2,99.45 3 1
+server/client.go:99.45,104.3 4 1
+server/client.go:104.8,107.3 2 1
+server/client.go:108.2,110.22 3 1
 server/main.go:8.13,16.68 5 0
 server/main.go:16.68,18.3 1 0
 server/main.go:20.2,22.14 2 0

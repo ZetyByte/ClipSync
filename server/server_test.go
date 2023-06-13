@@ -68,7 +68,7 @@ func TestServer_processERROR(t *testing.T) {
 	server2 := createMockServer(&secondClient, t)
 	defer server2.Close()
 
-	conn2 := connectToWebsocket(server2, t)
+	conn2 := connectToWebsocket(server2, t, nil, "")
 	defer conn2.Close()
 	secondClient.conn = conn2
 
@@ -94,11 +94,11 @@ func createMockServer(c *Client, t *testing.T) *httptest.Server {
 	}))
 }
 
-func connectToWebsocket(server *httptest.Server, t *testing.T) *websocket.Conn {
+func connectToWebsocket(server *httptest.Server, t *testing.T, header http.Header, id string) *websocket.Conn {
 	t.Helper()
-	wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + id
 
-	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL, header)
 	if err != nil {
 		t.Fatalf("Failed to connect to WebSocket server: %v", err)
 	}
@@ -122,34 +122,3 @@ func writeMessage(conn *websocket.Conn, t *testing.T, message string) {
 		t.Fatalf("Failed to write message to WebSocket connection: %v", status)
 	}
 }
-
-/*
-	server1 := createMockServer(&firstClient, t)
-	defer server1.Close()
-
-	conn := connectToWebsocket(server1, t)
-	defer conn.Close()
-
-	s.data[testID] = firstClient
-
-	writeMessage(conn, t, testData)
-
-	server2 := createMockServer(&secondClient, t)
-	defer server2.Close()
-
-	conn2 := connectToWebsocket(server2, t)
-	defer conn2.Close()
-
-	flag := make(chan bool)
-
-	go s.process(flag)
-	go secondClient.readData()
-	s.registerID <- secondClient
-
-	verifyMessage(conn2, t, testData)
-
-	writeMessage(conn2, t, testDataUpdated)
-
-	verifyMessage(conn, t, testDataUpdated)
-
-	flag <- true*/
