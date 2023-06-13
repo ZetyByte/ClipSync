@@ -5,10 +5,36 @@ import (
 	"net/http/httptest"
 	"sync"
 	"testing"
+	"time"
+
+	"github.com/gorilla/websocket"
 )
 
-func testClient_sendPing(t *testing.T) {
+func TestClient_sendPing(t *testing.T) {
+	client := Client{}
 
+	server := createMockServer(&client, t)
+	defer server.Close()
+
+	conn := connectToWebsocket(server, t, nil, "")
+	defer conn.Close()
+
+	go client.sendPing()
+
+	conn.SetPongHandler(func(string) error {
+		if err := conn.SetReadDeadline(time.Now().Add(pongWait)); err != nil {
+			t.Fatalf("Failed to fulfil read deadline: %v", err)
+		}
+		return nil
+	})
+
+	messageType, _, err := conn.ReadMessage()
+	if err != nil {
+		t.Fatalf("Failed to read a message: %v", err)
+	}
+	if messageType != websocket.PingMessage {
+		t.Fatalf("Expected %d, got %d", websocket.PingMessage, messageType)
+	}
 }
 
 func TestClient_writeData(t *testing.T) {
