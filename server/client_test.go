@@ -5,13 +5,13 @@ import (
 	"net/http/httptest"
 	"sync"
 	"testing"
+	"time"
 )
 
 func pingReceived(flag chan bool) {
 	flag <- true
 }
 
-/*
 func TestClient_sendPing(t *testing.T) {
 	client := Client{}
 
@@ -21,8 +21,6 @@ func TestClient_sendPing(t *testing.T) {
 	conn := connectToWebsocket(server, t, nil, "")
 	defer conn.Close()
 
-	go client.sendPing()
-
 	timer := time.NewTimer(pongWait + time.Second*4)
 	defer timer.Stop()
 
@@ -31,13 +29,27 @@ func TestClient_sendPing(t *testing.T) {
 		pingReceived(flag)
 		return nil
 	})
+
+	go client.sendPing()
+
+	// SetPingHandler is only called when a ping message is received via NextReader, ReadMessage, or message Read methods.
+	// refer to https://godoc.org/github.com/gorilla/websocket#Conn.SetPingHandler
+	go func() {
+		for {
+			_, _, err := conn.ReadMessage()
+			if err != nil {
+				return
+			}
+		}
+	}()
+
 	select {
 	case <-timer.C:
 		t.Fatal("Expected ping message, got timeout")
 	case <-flag:
 
 	}
-}*/
+}
 
 func TestClient_writeData(t *testing.T) {
 	testMessage := "test"
