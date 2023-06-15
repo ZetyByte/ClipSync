@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 )
 
@@ -60,7 +61,7 @@ func (c *Client) sendPing() {
 	defer ticker.Stop()
 
 	for range ticker.C {
-		if err := c.conn.WriteControl(websocket.PingMessage, nil, time.Now().Add(writeWait)); err != nil {
+		if err := c.conn.WriteControl(websocket.PingMessage, []byte("ping"), time.Now().Add(writeWait)); err != nil {
 			log.Println(err)
 			return
 		}
@@ -86,6 +87,9 @@ func (c *Client) readData() {
 
 // Handle creates a new client and lets the server process it.
 func handle(s *Server, w http.ResponseWriter, r *http.Request, m *sync.Mutex) {
+	log.Println("New client connected")
+	// added for testing purposes
+	upgrader.CheckOrigin = func(r *http.Request) bool { return true }
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Println(err)
@@ -99,10 +103,20 @@ func handle(s *Server, w http.ResponseWriter, r *http.Request, m *sync.Mutex) {
 	// and waits for the second client.
 	// If ID is not empty, then it is the second client, it is added to the channel to wait for its turn to be processed.
 	if id := r.URL.Query().Get("id"); id == "" {
-		id = r.Header.Get("Client-ID")
+		ok := true
+		for ok {
+			id = uuid.New().String()
+
+			m.Lock()
+			_, ok = s.data[id]
+			m.Unlock()
+		}
+		// for testing purposes
+		//id = "125"
 		m.Lock()
 		s.data[id] = &client
 		m.Unlock()
+		conn.WriteMessage(websocket.TextMessage, []byte("client-id: "+id))
 	} else {
 		client.peersID = id
 		s.registerID <- &client

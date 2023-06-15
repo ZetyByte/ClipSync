@@ -1,6 +1,7 @@
 package main
 
 import (
+	"log"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -19,6 +20,7 @@ func (s *Server) process(flag chan bool) {
 		case client := <-s.registerID:
 			value, ok := s.data[client.peersID]
 			if ok {
+				log.Println("Pairing clients")
 				value.pair = client
 				client.pair = value
 				delete(s.data, client.peersID)
