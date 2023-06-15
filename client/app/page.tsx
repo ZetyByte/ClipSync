@@ -1,28 +1,27 @@
 "use client";
 
 import React, { useEffect, useState } from 'react';
-<<<<<<< HEAD
-import './style.css'
-=======
 import { QRCodeSVG } from 'qrcode.react';
->>>>>>> 49056902bded993666455079b385890af521761b
+import './style.css'
+import { strict } from 'assert';
 
 const url = "ws://localhost:8080/ws";
 
 export default function Home() {
   const [message, setMessage] = useState('');
+  const [history, setHistory] = useState<string[]>([]); 
   const [status, setStatus] = useState('disconnected');
   const [socket, setSocket] = useState<WebSocket | null>(null);
   const [clientId, setClientId] = useState<string | null>(null);
+  const [chatStarted, setChatStarted] = useState(false);
 
-  useEffect(() => {
+  const connectWebSocket = () => {
     const socket = new WebSocket(url);
     setSocket(socket);
 
     // Connection opened
     socket.addEventListener('open', (event) => {
       console.log('WebSocket connection established.');
-      setStatus('connected');
     });
 
     // Listen for messages
@@ -30,10 +29,14 @@ export default function Home() {
       console.log('Received message:', event.data);
       if (event.data === 'ping') {
         socket.send('pong');
-      }
-      if (event.data.slice(0,11) === 'client-id: '){
+      } else if (event.data === 'connected') {
+        setStatus('connected');
+      } else if (event.data.slice(0,11) === 'client-id: '){
         console.log('Received client id:', event.data.slice(11));
         setClientId(event.data.slice(11));
+      } else {
+        setHistory((prev: any) => [...prev, 'Peer: ' + event.data]);
+        setChatStarted(true);
       }
     });
 
@@ -41,36 +44,66 @@ export default function Home() {
     socket.addEventListener('close', (event) => {
       console.log('WebSocket connection closed.');
       setStatus('disconnected');
-    });
+      connectWebSocket();
+    });};
+
+  useEffect(() => {
+    connectWebSocket();
 
     return () => {
       socket.close();
     }
   }, []);
 
-  const handleSendMessage = () => {
+  const sendMessage = (text: string) => {
     if (socket && socket.readyState === WebSocket.OPEN) {
-      if (message !== '') {
-      socket.send(message);
+      if (text !== '') {
+      socket.send(text);
       setMessage('');
+      setHistory((prev: any) => [...prev, 'You: ' + text]);
       }
+      setChatStarted(true);
     }
   };
-<<<<<<< HEAD
+
+  const handleSendMessage = () => {
+    sendMessage(message);
+  };
+
+  const clearMessages = () => {
+    setHistory([]);
+  };
+
+  const handlePaste = async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      sendMessage(text);
+      }
+    catch (error) {
+      console.error('Error pasting from clipboard:', error);
+    }
+  };
+
+
   return (<main>
     <div className="container">
-        <h1>ClipSync - Peer</h1>
-        <p>Client ID: {clientId}</p>
+        {status === 'disconnected' && clientId &&
+        <div>
+          <QRCodeSVG value={`${window.location.href}?id=${clientId}`} />
+          <p>Client ID: {clientId}</p>
+        </div>}
+
         <div className="status">
             <div className="title">Status: {status}</div>
             <div id="status"></div>
         </div>
 
-        {status === 'connected' && <div className="messages">
+        {(status === 'connected' || chatStarted) &&
+         <div className="messages">
             <div className="title">Messages:</div>
             <div className="message-box">
                 <div className="message-panel"></div>
-                <div id="message">тоиоио</div>
+                <div id="message"><pre>{history.join('\n')}</pre></div>
                 <input 
                   type="text"
                   value={message}
@@ -80,26 +113,10 @@ export default function Home() {
             </div>
             <div className="btns">
                 <button className="btn send" onClick={handleSendMessage}>Send</button>
-                <button className="btn clearMsg">Clear Messages (Locally)</button>  
-                <button className="btn past-clipbrd">Paste clipboard</button>
+                <button className="btn clearMsg" onClick={clearMessages}>Clear Messages (Locally)</button>  
+                <button className="btn past-clipbrd" onClick={handlePaste}>Paste clipboard</button>
             </div>            
         </div>}
     </div>
 </main>)
-=======
-
-  return (<>
-    <div>
-      <h1>WebSocket Example</h1>
-      <p>Client ID: {clientId}</p>
-      <input
-        type="text"
-        value={message}
-        onChange={(e) => setMessage(e.target.value)}
-      />
-      <button onClick={handleSendMessage}>Send</button>
-      <QRCodeSVG value={`${document.URL}?id=${clientId}`} />,
-    </div>
-  </>)
->>>>>>> 49056902bded993666455079b385890af521761b
 }

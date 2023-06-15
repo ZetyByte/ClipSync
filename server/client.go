@@ -50,6 +50,10 @@ func (c *Client) writeData() {
 			err := c.conn.WriteMessage(websocket.TextMessage, []byte(message))
 			if err != nil {
 				log.Println(err)
+				if c.pair != nil {
+					c.pair.conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseAbnormalClosure, err.Error()), time.Now().Add(time.Second*5))
+					c.pair.conn.Close()
+				}
 				return
 			}
 		}
@@ -63,6 +67,10 @@ func (c *Client) sendPing() {
 	for range ticker.C {
 		if err := c.conn.WriteControl(websocket.PingMessage, []byte("ping"), time.Now().Add(writeWait)); err != nil {
 			log.Println(err)
+			if c.pair != nil {
+				c.pair.conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseAbnormalClosure, err.Error()), time.Now().Add(time.Second*5))
+				c.pair.conn.Close()
+			}
 			return
 		}
 	}
@@ -79,6 +87,10 @@ func (c *Client) readData() {
 		_, message, err := c.conn.ReadMessage()
 		if err != nil {
 			log.Println(err)
+			if c.pair != nil {
+				c.pair.conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseAbnormalClosure, err.Error()), time.Now().Add(time.Second*5))
+				c.pair.conn.Close()
+			}
 			return
 		}
 		c.sendMessage <- string(message)

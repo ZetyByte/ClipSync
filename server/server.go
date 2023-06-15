@@ -23,6 +23,12 @@ func (s *Server) process(flag chan bool) {
 				log.Println("Pairing clients")
 				value.pair = client
 				client.pair = value
+
+				// Send message to both clients that they are connected to change the state of the pages.
+				client.conn.WriteMessage(websocket.TextMessage, []byte("connected"))
+				value.conn.WriteMessage(websocket.TextMessage, []byte("connected"))
+
+				// Delete paired client from the queue.
 				delete(s.data, client.peersID)
 			} else {
 				client.conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseInternalServerErr, "Client with this ID does not exist"), time.Now().Add(time.Second*5))
