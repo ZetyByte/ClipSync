@@ -111,12 +111,14 @@ func handle(s *Server, w http.ResponseWriter, r *http.Request, m *sync.Mutex) {
 			_, ok = s.data[id]
 			m.Unlock()
 		}
-		// for testing purposes
-		//id = "125"
 		m.Lock()
 		s.data[id] = &client
 		m.Unlock()
-		conn.WriteMessage(websocket.TextMessage, []byte("client-id: "+id))
+		if err = conn.WriteMessage(websocket.TextMessage, []byte("client-id: "+id)); err != nil {
+			log.Println(err)
+			return
+		}
+
 	} else {
 		client.peersID = id
 		s.registerID <- &client
