@@ -1,7 +1,11 @@
 "use client";
 
 import React, { useEffect, useState } from 'react';
+<<<<<<< HEAD
 import './style.css'
+=======
+import { QRCodeSVG } from 'qrcode.react';
+>>>>>>> 49056902bded993666455079b385890af521761b
 
 const url = "ws://localhost:8080/ws";
 
@@ -52,6 +56,7 @@ export default function Home() {
       }
     }
   };
+<<<<<<< HEAD
   return (<main>
     <div className="container">
         <h1>ClipSync - Peer</h1>
@@ -81,4 +86,20 @@ export default function Home() {
         </div>}
     </div>
 </main>)
+=======
+
+  return (<>
+    <div>
+      <h1>WebSocket Example</h1>
+      <p>Client ID: {clientId}</p>
+      <input
+        type="text"
+        value={message}
+        onChange={(e) => setMessage(e.target.value)}
+      />
+      <button onClick={handleSendMessage}>Send</button>
+      <QRCodeSVG value={`${document.URL}?id=${clientId}`} />,
+    </div>
+  </>)
+>>>>>>> 49056902bded993666455079b385890af521761b
 }
