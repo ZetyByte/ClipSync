@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from 'react';
+import { QRCodeSVG } from 'qrcode.react';
 
 const url = "ws://localhost:8080/ws";
 
@@ -47,7 +48,7 @@ export default function Home() {
     }
   };
 
-  return (<main>
+  return (<>
     <div>
       <h1>WebSocket Example</h1>
       <p>Client ID: {clientId}</p>
@@ -57,6 +58,7 @@ export default function Home() {
         onChange={(e) => setMessage(e.target.value)}
       />
       <button onClick={handleSendMessage}>Send</button>
+      <QRCodeSVG value={`${document.URL}?id=${clientId}`} />,
     </div>
-  </main>)
+  </>)
 }

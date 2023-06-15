@@ -17,7 +17,10 @@
     "eslint": "8.42.0",
     "eslint-config-next": "13.4.4",
     "next": "13.4.4",
+    "next.js": "^1.0.3",
     "postcss": "8.4.24",
+    "qrcode": "^1.5.3",
+    "qrcode.react": "^3.1.0",
     "react": "^18.2.0",
     "react-dom": "18.2.0",
     "typescript": "5.1.3"
