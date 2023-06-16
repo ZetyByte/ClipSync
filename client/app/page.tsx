@@ -16,7 +16,10 @@ export default function Home() {
   const [chatStarted, setChatStarted] = useState(false);
 
   const connectWebSocket = () => {
-    const socket = new WebSocket(url);
+    const urlParams = new URLSearchParams(window.location.search);
+    const id = urlParams.get('id');
+    let newUrl = url + (id ? `?id=${id}` : '');
+    const socket = new WebSocket(newUrl);
     setSocket(socket);
 
     // Connection opened
@@ -76,9 +79,15 @@ export default function Home() {
 
   const handlePaste = async () => {
     try {
-      const text = await navigator.clipboard.readText();
-      sendMessage(text);
+      const permissionStatus = await navigator.permissions.query({name: 'clipboard-read'});
+      if (permissionStatus.state === 'granted') {
+        const text = await navigator.clipboard.readText();
+        sendMessage(text);
       }
+      else {
+        console.log('Clipboard permission not granted.');
+      }
+    }
     catch (error) {
       console.error('Error pasting from clipboard:', error);
     }
