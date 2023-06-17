@@ -7,6 +7,8 @@ import { strict } from 'assert';
 
 const url = "ws://localhost:8080/ws";
 
+let tempKeyPair: CryptoKeyPair | null = null; // TODO: remove when reactive state is working
+
 export default function Home() {
   const [message, setMessage] = useState('');
   const [history, setHistory] = useState<string[]>([]); 
@@ -14,6 +16,12 @@ export default function Home() {
   const [socket, setSocket] = useState<WebSocket | null>(null);
   const [clientId, setClientId] = useState<string | null>(null);
   const [chatStarted, setChatStarted] = useState(false);
+  const [keyPair, setKeyPair] = useState<CryptoKeyPair | null>(null); // TODO: make this work
+  const [peerPublicKey, setPeerPublicKey] = useState<CryptoKey | null>(null);
+
+  useEffect(() => {
+    console.log("useEffect keypair: ", keyPair);
+  }, [keyPair]);
 
   const connectWebSocket = () => {
     const urlParams = new URLSearchParams(window.location.search);
@@ -29,17 +37,56 @@ export default function Home() {
 
     // Listen for messages
     socket.addEventListener('message', (event) => {
-      console.log('Received message:', event.data);
+      console.log('Received message: ', event.data);
+      console.log("keyPair: ", keyPair);
       if (event.data === 'ping') {
         socket.send('pong');
       } else if (event.data === 'connected') {
-        setStatus('connected');
+        window.crypto.subtle.generateKey(
+          {
+            name: "RSA-OAEP",
+            modulusLength: 2048,
+            publicExponent: new Uint8Array([1, 0, 1]),
+            hash: "SHA-256",
+          },
+          true,
+          ["encrypt", "decrypt"]
+        ).then((localKeyPair) => {
+          setKeyPair(localKeyPair);
+          tempKeyPair = localKeyPair;
+          console.log('Generated key pair: ', localKeyPair);
+          window.crypto.subtle.exportKey("spki", localKeyPair!.publicKey).then((publicKeyBuffer) => {
+            let publicKey = Buffer.from(publicKeyBuffer).toString('base64');
+            socket.send('public-key: ' + publicKey);
+            setStatus('connected');
+            setChatStarted(true);
+          });
+        })
       } else if (event.data.slice(0,11) === 'client-id: '){
-        console.log('Received client id:', event.data.slice(11));
+        console.log('Received client id: ', event.data.slice(11));
         setClientId(event.data.slice(11));
-      } else {
-        setHistory((prev: any) => [...prev, 'Peer: ' + event.data]);
-        setChatStarted(true);
+      } else if (event.data.slice(0, 12) === 'public-key: ') {
+        console.log('Received public key: ', event.data.slice(12));
+        let key = event.data.slice(12);
+        window.crypto.subtle.importKey("spki", Buffer.from(key, 'base64'), {name: "RSA-OAEP", hash: "SHA-256"}, true, ["encrypt"]).then((publicKey) => {
+          console.log('Imported public key: ', publicKey);
+          setPeerPublicKey(publicKey);
+        });
+      } else if (event.data.slice(0, 5) === 'msg: ') {
+        // Q: Why use msg: prefix?
+        // A: Maybe someone sends a message that starts with 'client-id: ' or 'public-key: '?
+        let encrypted = event.data.slice(5);
+        let encryptedBuffer = Buffer.from(encrypted, 'base64');
+        // window.crypto.subtle.decrypt("RSA-OAEP", keyPair!.privateKey, encrypted).then((decrypted) => {
+        //   setHistory((prev: any) => [...prev, 'Peer: ' + decrypted]);
+        // });
+        window.crypto.subtle.decrypt("RSA-OAEP", tempKeyPair!.privateKey, encryptedBuffer).then((decrypted) => {
+          let decryptedString = Buffer.from(decrypted).toString('base64');
+          setHistory((prev: any) => [...prev, 'Peer: ' + decryptedString]);
+        });
+      }
+      else{
+        console.log('Received unknown message: ', event.data);
       }
     });
 
@@ -54,17 +101,21 @@ export default function Home() {
     connectWebSocket();
 
     return () => {
-      socket.close();
+      socket!.close();
     }
   }, []);
 
-  const sendMessage = (text: string) => {
+  const sendMessage = async (text: string) => {
     if (socket && socket.readyState === WebSocket.OPEN) {
       if (text !== '') {
-      socket.send(text);
-      setMessage('');
-      setHistory((prev: any) => [...prev, 'You: ' + text]);
-      }
+        setHistory((prev: any) => [...prev, 'You: ' + text]);
+        window.crypto.subtle.encrypt("RSA-OAEP", peerPublicKey!, Buffer.from(text, 'base64')).then((encrypted) => {
+          console.log('Encrypted message: ', encrypted);
+          console.log('Peer public key: ', peerPublicKey!);
+          let encryptedString = Buffer.from(encrypted).toString('base64');
+          socket.send("msg: " + encryptedString);
+          setMessage('');
+        });}
       setChatStarted(true);
     }
   };
