@@ -20,27 +20,8 @@ export default function Home() {
   const [peerPublicKey, setPeerPublicKey] = useState<CryptoKey | null>(null);
 
   useEffect(() => {
-    const script = document.createElement("script");
-    script.src = "/asset/js/jsencrypt.min.js";
-    script.async = true;
-    document.body.appendChild(script); 
-  }, [1]);
-
-  useEffect(() => {
     console.log("useEffect keypair: ", keyPair);
   }, [keyPair]);
-
-  const encrypt = (message: string, publicKey: string) => {
-    const jsEncrypt = new JSEncrypt();
-    jsEncrypt.setPublicKey(publicKey);
-    return jsEncrypt.encrypt(message);
-  }
-
-  const decrypt = (message: string, privateKey: string) => {
-    const jsEncrypt = new JSEncrypt();
-    jsEncrypt.setPrivateKey(privateKey);
-    return jsEncrypt.decrypt(message);
-  }
 
   const connectWebSocket = () => {
     const urlParams = new URLSearchParams(window.location.search);
@@ -74,7 +55,6 @@ export default function Home() {
           setKeyPair(localKeyPair);
           tempKeyPair = localKeyPair;
           console.log('Generated key pair: ', localKeyPair);
-
           window.crypto.subtle.exportKey("spki", localKeyPair!.publicKey).then((publicKeyBuffer) => {
             let publicKey = Buffer.from(publicKeyBuffer).toString('base64');
             socket.send('public-key: ' + publicKey);
@@ -96,18 +76,12 @@ export default function Home() {
         // Q: Why use msg: prefix?
         // A: Maybe someone sends a message that starts with 'client-id: ' or 'public-key: '?
         let encrypted = event.data.slice(5);
+        let encryptedBuffer = Buffer.from(encrypted, 'base64');
         // window.crypto.subtle.decrypt("RSA-OAEP", keyPair!.privateKey, encrypted).then((decrypted) => {
         //   setHistory((prev: any) => [...prev, 'Peer: ' + decrypted]);
         // });
-
-        // window.crypto.subtle.decrypt("RSA-OAEP", tempKeyPair!.privateKey, encryptedBuffer).then((decrypted) => {
-        //   let decryptedString = Buffer.from(decrypted).toString('base64');
-        //   setHistory((prev: any) => [...prev, 'Peer: ' + decryptedString]);
-        // });
-
-        window.crypto.subtle.exportKey("pkcs8", tempKeyPair!.privateKey).then((privateKeyBuffer) => {
-          let privateKey = Buffer.from(privateKeyBuffer).toString('base64');
-          let decryptedString = decrypt(encrypted, privateKey);
+        window.crypto.subtle.decrypt("RSA-OAEP", tempKeyPair!.privateKey, encryptedBuffer).then((decrypted) => {
+          let decryptedString = Buffer.from(decrypted).toString('base64');
           setHistory((prev: any) => [...prev, 'Peer: ' + decryptedString]);
         });
       }
@@ -135,23 +109,14 @@ export default function Home() {
     if (socket && socket.readyState === WebSocket.OPEN) {
       if (text !== '') {
         setHistory((prev: any) => [...prev, 'You: ' + text]);
-
-        // window.crypto.subtle.encrypt("RSA-OAEP", peerPublicKey!, Buffer.from(text, 'base64')).then((encrypted) => {
-        //   console.log('Encrypted message: ', encrypted);
-        //   console.log('Peer public key: ', peerPublicKey!);
-        //   let encryptedString = Buffer.from(encrypted).toString('base64');
-        //   socket.send("msg: " + encryptedString);
-        //   setMessage('');
-        // });}
-
-        window.crypto.subtle.exportKey("spki", peerPublicKey!).then((publicKeyBuffer) => {
-          let publicKey = Buffer.from(publicKeyBuffer).toString('base64');
-          let encryptedString = encrypt(text, publicKey);
+        window.crypto.subtle.encrypt("RSA-OAEP", peerPublicKey!, Buffer.from(text, 'base64')).then((encrypted) => {
+          console.log('Encrypted message: ', encrypted);
+          console.log('Peer public key: ', peerPublicKey!);
+          let encryptedString = Buffer.from(encrypted).toString('base64');
           socket.send("msg: " + encryptedString);
           setMessage('');
-          setChatStarted(true);
-        });
-      }
+        });}
+      setChatStarted(true);
     }
   };
 
