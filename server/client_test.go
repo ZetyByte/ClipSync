@@ -1,15 +1,57 @@
 package main
 
 import (
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/gorilla/websocket"
 )
 
 func pingReceived(flag chan bool) {
 	flag <- true
+}
+
+func TestClient_closeConnection(t *testing.T) {
+	client1 := Client{}
+
+	server := createMockServer(&client1, t)
+	defer server.Close()
+
+	conn2 := connectToWebsocket(server, t, nil, "")
+	defer conn2.Close()
+
+	client2 := &Client{conn: conn2}
+	client1.pair = client2
+
+	err := client1.closeConnection()
+
+	if err != nil {
+		t.Fatalf("closeConnection() returned an error: %v", err)
+	}
+
+	assertConnectionClosed(t, conn2)
+}
+
+func assertConnectionClosed(t *testing.T, conn *websocket.Conn) {
+	t.Helper()
+
+	conn.SetReadDeadline(time.Now().Add(time.Second))
+
+	_, _, err := conn.ReadMessage()
+	if err == nil {
+		t.Errorf("Expected the connection to be closed, but ReadMessage returned no error")
+	} else if !websocket.IsCloseError(err, websocket.CloseAbnormalClosure, websocket.CloseGoingAway) {
+		if netErr, ok := err.(*net.OpError); ok {
+			if netErr.Op == "read" && netErr.Err.Error() == "use of closed network connection" {
+				return // Connection closed as expected
+			}
+		}
+		t.Errorf("Expected a close error, but got: %v", err)
+	}
 }
 
 func TestClient_sendPing(t *testing.T) {

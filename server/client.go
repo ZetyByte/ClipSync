@@ -34,11 +34,34 @@ type Client struct {
 	peersID string
 
 	pair *Client
+
+	mutex sync.Mutex
 }
 
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
+}
+
+func (c *Client) closeConnection() error {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+
+	var err error
+
+	if c.pair != nil {
+		err = c.pair.conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseAbnormalClosure, "Closing connection"), time.Now().Add(time.Second*1))
+		if err != nil {
+			return err
+		}
+
+		err = c.pair.conn.Close()
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // Writes data to websocket.
@@ -50,10 +73,7 @@ func (c *Client) writeData() {
 			err := c.conn.WriteMessage(websocket.TextMessage, []byte(message))
 			if err != nil {
 				log.Println(err)
-				if c.pair != nil {
-					c.pair.conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseAbnormalClosure, err.Error()), time.Now().Add(time.Second*5))
-					c.pair.conn.Close()
-				}
+				c.closeConnection()
 				return
 			}
 		}
@@ -67,10 +87,7 @@ func (c *Client) sendPing() {
 	for range ticker.C {
 		if err := c.conn.WriteControl(websocket.PingMessage, []byte("ping"), time.Now().Add(writeWait)); err != nil {
 			log.Println(err)
-			if c.pair != nil {
-				c.pair.conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseAbnormalClosure, err.Error()), time.Now().Add(time.Second*5))
-				c.pair.conn.Close()
-			}
+			c.closeConnection()
 			return
 		}
 	}
@@ -87,10 +104,7 @@ func (c *Client) readData() {
 		_, message, err := c.conn.ReadMessage()
 		if err != nil {
 			log.Println(err)
-			if c.pair != nil {
-				c.pair.conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseAbnormalClosure, err.Error()), time.Now().Add(time.Second*5))
-				c.pair.conn.Close()
-			}
+			c.closeConnection()
 			return
 		}
 		c.sendMessage <- string(message)
@@ -130,11 +144,11 @@ func handle(s *Server, w http.ResponseWriter, r *http.Request, m *sync.Mutex) {
 			log.Println(err)
 			return
 		}
-
 	} else {
 		client.peersID = id
 		s.registerID <- &client
 	}
+
 	go client.readData()
 	go client.writeData()
 	go client.sendPing()
