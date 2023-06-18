@@ -167,7 +167,7 @@ export default function Home() {
     <div className="container">
         {status === 'disconnected' && clientId &&
         <div>
-          <QRCodeSVG value={`${window.location.href}?id=${clientId}`} />
+          <QRCodeSVG value={`${window.location.href}?id=${clientId}`} includeMargin={true} size={192}/>
           <p>Client ID: {clientId}</p>
         </div>}
 
@@ -181,9 +181,10 @@ export default function Home() {
             <div className="title">Messages:</div>
             <div className="message-box">
                 <div className="message-panel"></div>
-                <div id="message"><pre>{history.join('\n')}</pre></div>
+                <div id="message" className="dark:bg-slate-900"><pre>{history.join('\n')}</pre></div>
                 <input 
                   type="text"
+                  className="dark:bg-black"
                   value={message}
                   onChange={(e) => setMessage(e.target.value)}
                   placeholder="Enter a message..." 

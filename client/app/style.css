@@ -63,6 +63,11 @@ body {
   /* padding: 5px; */
 }
 
+.dark-message {
+  background-color: rgb(56,58,64);
+  border-color: rgb(56,58,64);
+}
+
 #sendInput {
   background-color: rgb(233, 238, 241);
   outline: none;
@@ -88,6 +93,11 @@ body {
 
 input[type="text"] {
   width: 100%;
+}
+
+.dark-input {
+  background-color: rgb(56,58,64);
+  border-color: rgb(56,58,64);
 }
 
 .btns {
