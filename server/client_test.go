@@ -36,24 +36,6 @@ func TestClient_closeConnection(t *testing.T) {
 	assertConnectionClosed(t, conn2)
 }
 
-func assertConnectionClosed(t *testing.T, conn *websocket.Conn) {
-	t.Helper()
-
-	conn.SetReadDeadline(time.Now().Add(time.Second))
-
-	_, _, err := conn.ReadMessage()
-	if err == nil {
-		t.Errorf("Expected the connection to be closed, but ReadMessage returned no error")
-	} else if !websocket.IsCloseError(err, websocket.CloseAbnormalClosure, websocket.CloseGoingAway) {
-		if netErr, ok := err.(*net.OpError); ok {
-			if netErr.Op == "read" && netErr.Err.Error() == "use of closed network connection" {
-				return // Connection closed as expected
-			}
-		}
-		t.Errorf("Expected a close error, but got: %v", err)
-	}
-}
-
 func TestClient_sendPing(t *testing.T) {
 	client := Client{}
 
@@ -140,13 +122,13 @@ func TestClient_handle(t *testing.T) {
 	testMessage := "test"
 	testID := "125"
 	var mutex sync.Mutex
-	var server Server = Server{data: make(map[string]*Client), registerID: make(chan *Client)}
+	var server Server = Server{clients: make(map[string]*Client), registerID: make(chan *Client)}
 
 	flag := make(chan bool)
 
 	go server.process(flag)
 
-	var mockServer *httptest.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		handle(&server, w, r, &mutex)
 	}))
 	defer mockServer.Close()
@@ -164,4 +146,22 @@ func TestClient_handle(t *testing.T) {
 	verifyMessage(conn1, t, testMessage)
 
 	flag <- true
+}
+
+func assertConnectionClosed(t *testing.T, conn *websocket.Conn) {
+	t.Helper()
+
+	conn.SetReadDeadline(time.Now().Add(time.Second))
+
+	_, _, err := conn.ReadMessage()
+	if err == nil {
+		t.Errorf("Expected the connection to be closed, but ReadMessage returned no error")
+	} else if !websocket.IsCloseError(err, websocket.CloseAbnormalClosure, websocket.CloseGoingAway) {
+		if netErr, ok := err.(*net.OpError); ok {
+			if netErr.Op == "read" && netErr.Err.Error() == "use of closed network connection" {
+				return // Connection closed as expected
+			}
+		}
+		t.Errorf("Expected a close error, but got: %v", err)
+	}
 }
