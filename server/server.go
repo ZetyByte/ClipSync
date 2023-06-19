@@ -8,35 +8,47 @@ import (
 )
 
 type Server struct {
-	data map[string](*Client)
+	clients map[string](*Client)
 
 	registerID chan *Client
 }
 
-// Processes second clients (the ones than connected by ID).
+// Processes second clients (the ones that connected by ID).
 func (s *Server) process(flag chan bool) {
 	for {
 		select {
 		case client := <-s.registerID:
-			value, ok := s.data[client.peersID]
+			peer, ok := s.clients[client.peerID]
 			if ok {
 				log.Println("Pairing clients")
-				value.pair = client
-				client.pair = value
+				pairClients(client, peer)
 
 				// Send message to both clients that they are connected to change the state of the pages.
-				client.conn.WriteMessage(websocket.TextMessage, []byte("connected"))
-				value.conn.WriteMessage(websocket.TextMessage, []byte("connected"))
+				sendConnectedMessage(client.conn)
+				sendConnectedMessage(peer.conn)
 
 				// Delete paired client from the queue.
-				delete(s.data, client.peersID)
+				delete(s.clients, client.peerID)
 			} else {
-				client.conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseInternalServerErr, "Client with this ID does not exist"), time.Now().Add(time.Second*5))
-				client.conn.Close()
+				handleInvalidID(client)
 			}
 		case <-flag:
 			close(s.registerID)
 			return
 		}
 	}
+}
+
+func pairClients(client1, client2 *Client) {
+	client1.pair = client2
+	client2.pair = client1
+}
+
+func sendConnectedMessage(conn *websocket.Conn) {
+	conn.WriteMessage(websocket.TextMessage, []byte("connected"))
+}
+
+func handleInvalidID(client *Client) {
+	client.conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseInternalServerErr, "Client with this ID does not exist"), time.Now().Add(time.Second*5))
+	client.conn.Close()
 }

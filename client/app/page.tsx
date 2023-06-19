@@ -10,8 +10,6 @@ const { subtle } = globalThis.crypto;
 
 const serverUrl = "ws://localhost:8080/ws";
 
-let tempKeyPair: CryptoKeyPair | null = null; // TODO: remove when reactive state is working
-
 export default function Home() {
   const [message, setMessage] = useState('');
   const [copiedMessage, setCopiedMessage] = useState('');
@@ -20,34 +18,40 @@ export default function Home() {
   const [socket, setSocket] = useState<WebSocket | null>(null);
   const [clientId, setClientId] = useState<string | null>(null);
   const [chatStarted, setChatStarted] = useState(false);
-  const [keyPair, setKeyPair] = useState<CryptoKeyPair | null>(null); // TODO: make this work
+  const [keyPair, setKeyPair] = useState<CryptoKeyPair | null>(null);
   const [peerPublicKey, setPeerPublicKey] = useState<CryptoKey | null>(null);
 
   useEffect(() => {
-    generateKeyPair(null);
-    const script = document.createElement("script");
-    script.src = "/asset/js/jsencrypt.min.js";
-    script.async = true;
-    document.body.appendChild(script); 
-  }, [1]);
-
-  useEffect(() => {
-    console.log("useEffect keypair: ", keyPair);
+    if (keyPair)
+    {
+      connectWebSocket();
+      return () => {
+        if (socket)
+          socket!.close();
+      }
+    }
   }, [keyPair]);
+  
+  useEffect(() => {
+    generateKeyPair();
+  }, []);
 
-  const encrypt = (message: string, publicKey: string) => {
+
+  const encrypt = async (message: string, publicKey: string) => {
+    const JSEncrypt = (await import('jsencrypt')).default
     const jsEncrypt = new JSEncrypt();
     jsEncrypt.setPublicKey(publicKey);
     return jsEncrypt.encrypt(message);
   }
 
-  const decrypt = (message: string, privateKey: string) => {
+  const decrypt = async (message: string, privateKey: string) => {
+    const JSEncrypt = (await import('jsencrypt')).default
     const jsEncrypt = new JSEncrypt();
     jsEncrypt.setPrivateKey(privateKey);
     return jsEncrypt.decrypt(message);
   }
 
-  const generateKeyPair = async (e: any) => {
+  const generateKeyPair = async () => {
     let localKeyPair = await subtle.generateKey(
       {
         name: "RSA-OAEP",
@@ -59,12 +63,11 @@ export default function Home() {
       ["encrypt", "decrypt"]
     );
     setKeyPair(localKeyPair);
-    tempKeyPair = localKeyPair;
     console.log('Generated key pair: ', localKeyPair);
   }
 
   const getOwnPublicKey = async () => {
-    let publicKeyBuffer = await subtle.exportKey("spki", tempKeyPair!.publicKey);
+    let publicKeyBuffer = await subtle.exportKey("spki", keyPair!.publicKey);
     let publicKey = Buffer.from(publicKeyBuffer).toString('base64');
     return publicKey;
   }
@@ -87,7 +90,7 @@ export default function Home() {
   }
 
   const getPrivateKey = async () => {
-    let privateKeyBuffer = await subtle.exportKey("pkcs8", tempKeyPair!.privateKey)
+    let privateKeyBuffer = await subtle.exportKey("pkcs8", keyPair!.privateKey)
     let privateKey = Buffer.from(privateKeyBuffer).toString('base64');
     return privateKey;
   }
@@ -136,7 +139,7 @@ export default function Home() {
         let encrypted = event.data.slice(5);
 
         let privateKey = await getPrivateKey();
-        let decryptedString = decrypt(encrypted, privateKey);
+        let decryptedString = await decrypt(encrypted, privateKey);
         setHistory((prev: any) => [...prev, 'Peer: ' + decryptedString]);
       }
       else{
@@ -151,14 +154,6 @@ export default function Home() {
       connectWebSocket();
     });};
 
-  useEffect(() => {
-    connectWebSocket();
-
-    return () => {
-      socket!.close();
-    }
-  }, []);
-
   const sendMessage = async (text: string) => {
     if (!socket || socket.readyState !== WebSocket.OPEN) {
       return;
@@ -171,7 +166,7 @@ export default function Home() {
     setHistory((prev: any) => [...prev, 'You: ' + text]);
 
     let publicKey = await getPeerPublicKey();
-    let encryptedString = encrypt(text, publicKey);
+    let encryptedString = await encrypt(text, publicKey);
     socket.send("msg: " + encryptedString);
     setMessage('');
     setChatStarted(true);
@@ -183,6 +178,7 @@ export default function Home() {
 
   const clearMessages = () => {
     setHistory([]);
+    setChatStarted(false);
   };
 
   const copyToClipboard = (message: string) => {
@@ -254,7 +250,14 @@ export default function Home() {
                   value={message}
                   onChange={(e) => setMessage(e.target.value)}
                   placeholder="Enter a message..." 
-                  autoFocus={true}></input>
+                  autoFocus={true}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      handleSendMessage();
+                    }
+                  }}>
+                </input>
             </div>
             <div className="btns">
                 <button className="btn send" onClick={handleSendMessage}>Send</button>

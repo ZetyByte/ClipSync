@@ -16,7 +16,7 @@ func main() {
 	// Check "Server" struct in server\server.go for more information.
 	// Mutex itself is used in "handle" function in server\client.go to synchronize access to the map of clients.
 	var mutex sync.Mutex
-	var server Server = Server{data: make(map[string]*Client), registerID: make(chan *Client)}
+	var server Server = Server{clients: make(map[string]*Client), registerID: make(chan *Client)}
 
 	flag := make(chan bool)
 

@@ -31,7 +31,7 @@ type Client struct {
 
 	sendMessage chan string
 
-	peersID string
+	peerID string
 
 	pair *Client
 
@@ -52,11 +52,13 @@ func (c *Client) closeConnection() error {
 	if c.pair != nil {
 		err = c.pair.conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseAbnormalClosure, "Closing connection"), time.Now().Add(time.Second*1))
 		if err != nil {
+			log.Println("Error writing control message:", err)
 			return err
 		}
 
 		err = c.pair.conn.Close()
 		if err != nil {
+			log.Println("Error closing connection:", err)
 			return err
 		}
 	}
@@ -72,7 +74,7 @@ func (c *Client) writeData() {
 			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
 			err := c.conn.WriteMessage(websocket.TextMessage, []byte(message))
 			if err != nil {
-				log.Println(err)
+				log.Println("Error writing message:", err)
 				c.closeConnection()
 				return
 			}
@@ -86,7 +88,7 @@ func (c *Client) sendPing() {
 
 	for range ticker.C {
 		if err := c.conn.WriteControl(websocket.PingMessage, []byte("ping"), time.Now().Add(writeWait)); err != nil {
-			log.Println(err)
+			log.Println("Error sending ping:", err)
 			c.closeConnection()
 			return
 		}
@@ -103,7 +105,7 @@ func (c *Client) readData() {
 	for {
 		_, message, err := c.conn.ReadMessage()
 		if err != nil {
-			log.Println(err)
+			log.Println("Error reading message:", err)
 			c.closeConnection()
 			return
 		}
@@ -114,15 +116,22 @@ func (c *Client) readData() {
 // Handle creates a new client and lets the server process it.
 func handle(s *Server, w http.ResponseWriter, r *http.Request, m *sync.Mutex) {
 	log.Println("New client connected")
+
 	// added for testing purposes
 	upgrader.CheckOrigin = func(r *http.Request) bool { return true }
+
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Println(err)
+		log.Println("Error upgrading connection:", err)
 		return
 	}
 	conn.SetReadLimit(maxMessageSize)
-	client := Client{server: s, conn: conn, sendMessage: make(chan string)}
+
+	client := Client{
+		server:      s,
+		conn:        conn,
+		sendMessage: make(chan string),
+	}
 
 	// Read ID from query.
 	// If ID is empty, then it is the first client, it is added to the map of clients using its ID from header
@@ -134,18 +143,20 @@ func handle(s *Server, w http.ResponseWriter, r *http.Request, m *sync.Mutex) {
 			id = uuid.New().String()
 
 			m.Lock()
-			_, ok = s.data[id]
+			_, ok = s.clients[id]
 			m.Unlock()
 		}
+
 		m.Lock()
-		s.data[id] = &client
+		s.clients[id] = &client
 		m.Unlock()
+
 		if err = conn.WriteMessage(websocket.TextMessage, []byte("client-id: "+id)); err != nil {
-			log.Println(err)
+			log.Println("Error writing message:", err)
 			return
 		}
 	} else {
-		client.peersID = id
+		client.peerID = id
 		s.registerID <- &client
 	}
 

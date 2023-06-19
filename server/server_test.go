@@ -20,14 +20,14 @@ func openClientConnection(c *Client, t *testing.T, w http.ResponseWriter, r *htt
 }
 
 func TestServer_process(t *testing.T) {
-	var s Server = Server{data: make(map[string]*Client), registerID: make(chan *Client, 1)}
+	var s Server = Server{clients: make(map[string]*Client), registerID: make(chan *Client, 1)}
 
 	testID := "125"
 	firstClient := Client{sendMessage: make(chan string, 1), server: &s}
 
-	secondClient := Client{sendMessage: make(chan string, 1), peersID: testID, server: &s}
+	secondClient := Client{sendMessage: make(chan string, 1), peerID: testID, server: &s}
 
-	s.data[testID] = &firstClient
+	s.clients[testID] = &firstClient
 	s.registerID <- &secondClient
 
 	flag := make(chan bool)
@@ -46,7 +46,7 @@ func TestServer_process(t *testing.T) {
 }
 
 func TestServer_processFLAG(t *testing.T) {
-	var s Server = Server{data: make(map[string]*Client), registerID: make(chan *Client, 1)}
+	var s Server = Server{clients: make(map[string]*Client), registerID: make(chan *Client, 1)}
 
 	flag := make(chan bool)
 	go s.process(flag)
@@ -59,12 +59,12 @@ func TestServer_processFLAG(t *testing.T) {
 }
 
 func TestServer_processERROR(t *testing.T) {
-	var s Server = Server{data: make(map[string]*Client), registerID: make(chan *Client, 1)}
+	var s Server = Server{clients: make(map[string]*Client), registerID: make(chan *Client, 1)}
 
 	testID, wrongID := "125", "123"
 	firstClient := Client{sendMessage: make(chan string, 1), server: &s}
 
-	secondClient := Client{sendMessage: make(chan string, 1), peersID: wrongID, server: &s}
+	secondClient := Client{sendMessage: make(chan string, 1), peerID: wrongID, server: &s}
 	server2 := createMockServer(&secondClient, t)
 	defer server2.Close()
 
@@ -72,7 +72,7 @@ func TestServer_processERROR(t *testing.T) {
 	defer conn2.Close()
 	secondClient.conn = conn2
 
-	s.data[testID] = &firstClient
+	s.clients[testID] = &firstClient
 	s.registerID <- &secondClient
 
 	flag := make(chan bool)
@@ -89,6 +89,7 @@ func TestServer_processERROR(t *testing.T) {
 }
 
 func createMockServer(c *Client, t *testing.T) *httptest.Server {
+	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		openClientConnection(c, t, w, r)
 	}))
