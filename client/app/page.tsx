@@ -5,7 +5,9 @@ import { QRCodeSVG } from 'qrcode.react';
 import './style.css'
 import { strict } from 'assert';
 
-const url = "ws://localhost:8080/ws";
+const { subtle } = globalThis.crypto;
+
+const serverUrl = "ws://localhost:8080/ws";
 
 let tempKeyPair: CryptoKeyPair | null = null; // TODO: remove when reactive state is working
 
@@ -20,6 +22,7 @@ export default function Home() {
   const [peerPublicKey, setPeerPublicKey] = useState<CryptoKey | null>(null);
 
   useEffect(() => {
+    generateKeyPair(null);
     const script = document.createElement("script");
     script.src = "/asset/js/jsencrypt.min.js";
     script.async = true;
@@ -42,11 +45,60 @@ export default function Home() {
     return jsEncrypt.decrypt(message);
   }
 
-  const connectWebSocket = () => {
+  const generateKeyPair = async (e: any) => {
+    let localKeyPair = await subtle.generateKey(
+      {
+        name: "RSA-OAEP",
+        modulusLength: 2048,
+        publicExponent: new Uint8Array([1, 0, 1]),
+        hash: "SHA-256",
+      },
+      true,
+      ["encrypt", "decrypt"]
+    );
+    setKeyPair(localKeyPair);
+    tempKeyPair = localKeyPair;
+    console.log('Generated key pair: ', localKeyPair);
+  }
+
+  const getOwnPublicKey = async () => {
+    let publicKeyBuffer = await subtle.exportKey("spki", tempKeyPair!.publicKey);
+    let publicKey = Buffer.from(publicKeyBuffer).toString('base64');
+    return publicKey;
+  }
+
+  const sendPublicKey = async (socket: WebSocket) => {
+    let publicKey = await getOwnPublicKey();
+    socket.send('public-key: ' + publicKey);
+  }
+
+  const importAndSetPeerPublicKey = async (key: string) => {
+    let publicKey = await subtle.importKey("spki", Buffer.from(key, 'base64'), {name: "RSA-OAEP", hash: "SHA-256"}, true, ["encrypt"]);
+    setPeerPublicKey(publicKey);
+    console.log('Imported public key: ', publicKey);
+  }
+
+  const getPeerPublicKey = async () => {
+    let publicKeyBuffer = await subtle.exportKey("spki", peerPublicKey!)
+    let publicKey = Buffer.from(publicKeyBuffer).toString('base64');
+    return publicKey;
+  }
+
+  const getPrivateKey = async () => {
+    let privateKeyBuffer = await subtle.exportKey("pkcs8", tempKeyPair!.privateKey)
+    let privateKey = Buffer.from(privateKeyBuffer).toString('base64');
+    return privateKey;
+  }
+
+  const getUrl = () => {
     const urlParams = new URLSearchParams(window.location.search);
     const id = urlParams.get('id');
-    let newUrl = url + (id ? `?id=${id}` : '');
-    const socket = new WebSocket(newUrl);
+    return serverUrl + (id ? `?id=${id}` : '');
+  }
+
+  const connectWebSocket = () => {
+    let url = getUrl();
+    const socket = new WebSocket(url);
     setSocket(socket);
 
     // Connection opened
@@ -62,44 +114,26 @@ export default function Home() {
         socket.send('pong');
 
       } else if (event.data === 'connected') {
-        let localKeyPair = await window.crypto.subtle.generateKey(
-          {
-            name: "RSA-OAEP",
-            modulusLength: 2048,
-            publicExponent: new Uint8Array([1, 0, 1]),
-            hash: "SHA-256",
-          },
-          true,
-          ["encrypt", "decrypt"]
-        );
-        setKeyPair(localKeyPair);
-        tempKeyPair = localKeyPair;
-        console.log('Generated key pair: ', localKeyPair);
-
-        let publicKeyBuffer = await window.crypto.subtle.exportKey("spki", localKeyPair!.publicKey);
-        let publicKey = Buffer.from(publicKeyBuffer).toString('base64');
-        socket.send('public-key: ' + publicKey);
+        sendPublicKey(socket!);
         setStatus('connected');
         setChatStarted(true);
 
       } else if (event.data.slice(0,11) === 'client-id: '){
-        console.log('Received client id: ', event.data.slice(11));
-        setClientId(event.data.slice(11));
+        let clientId = event.data.slice(11);
+        console.log('Received client id: ', clientId);
+        setClientId(clientId);
 
       } else if (event.data.slice(0, 12) === 'public-key: ') {
         console.log('Received public key: ', event.data.slice(12));
         let key = event.data.slice(12);
-        let publicKey = await window.crypto.subtle.importKey("spki", Buffer.from(key, 'base64'), {name: "RSA-OAEP", hash: "SHA-256"}, true, ["encrypt"]);
-        console.log('Imported public key: ', publicKey);
-        setPeerPublicKey(publicKey);
+        importAndSetPeerPublicKey(key)
 
       } else if (event.data.slice(0, 5) === 'msg: ') {
         // Q: Why use msg: prefix?
         // A: Maybe someone sends a message that starts with 'client-id: ' or 'public-key: '?
         let encrypted = event.data.slice(5);
 
-        let privateKeyBuffer = await window.crypto.subtle.exportKey("pkcs8", tempKeyPair!.privateKey)
-        let privateKey = Buffer.from(privateKeyBuffer).toString('base64');
+        let privateKey = await getPrivateKey();
         let decryptedString = decrypt(encrypted, privateKey);
         setHistory((prev: any) => [...prev, 'Peer: ' + decryptedString]);
       }
@@ -124,18 +158,21 @@ export default function Home() {
   }, []);
 
   const sendMessage = async (text: string) => {
-    if (socket && socket.readyState === WebSocket.OPEN) {
-      if (text !== '') {
-        setHistory((prev: any) => [...prev, 'You: ' + text]);
-
-        let publicKeyBuffer = await window.crypto.subtle.exportKey("spki", peerPublicKey!)
-        let publicKey = Buffer.from(publicKeyBuffer).toString('base64');
-        let encryptedString = encrypt(text, publicKey);
-        socket.send("msg: " + encryptedString);
-        setMessage('');
-        setChatStarted(true);
-      }
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      return;
     }
+
+    if (!text.trim()) {
+      return;
+    }
+    
+    setHistory((prev: any) => [...prev, 'You: ' + text]);
+
+    let publicKey = await getPeerPublicKey();
+    let encryptedString = encrypt(text, publicKey);
+    socket.send("msg: " + encryptedString);
+    setMessage('');
+    setChatStarted(true);
   };
 
   const handleSendMessage = async () => {
@@ -149,12 +186,17 @@ export default function Home() {
   const handlePaste = async () => {
     try {
       const permissionStatus = await navigator.permissions.query({name: 'clipboard-read'});
-      if (permissionStatus.state === 'granted') {
-        const text = await navigator.clipboard.readText();
-        sendMessage(text);
-      }
-      else {
-        console.log('Clipboard permission not granted.');
+      switch (permissionStatus.state) {
+        case "granted":
+          const text = await navigator.clipboard.readText();
+          sendMessage(text);
+          break;
+        case "prompt":
+          console.log('Clipboard permission prompt. Not sure what to do here.');
+          break;
+        default:
+          console.log('Clipboard permission not granted.');
+          break;
       }
     }
     catch (error) {
