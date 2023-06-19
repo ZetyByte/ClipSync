@@ -5,7 +5,6 @@ import { QRCodeSVG } from 'qrcode.react';
 import { BiCopy } from 'react-icons/bi';
 import './style.css'
 import { strict } from 'assert';
-import JSEncrypt from 'jsencrypt';
 
 const { subtle } = globalThis.crypto;
 
@@ -38,13 +37,15 @@ export default function Home() {
   }, []);
 
 
-  const encrypt = (message: string, publicKey: string) => {
+  const encrypt = async (message: string, publicKey: string) => {
+    const JSEncrypt = (await import('jsencrypt')).default
     const jsEncrypt = new JSEncrypt();
     jsEncrypt.setPublicKey(publicKey);
     return jsEncrypt.encrypt(message);
   }
 
-  const decrypt = (message: string, privateKey: string) => {
+  const decrypt = async (message: string, privateKey: string) => {
+    const JSEncrypt = (await import('jsencrypt')).default
     const jsEncrypt = new JSEncrypt();
     jsEncrypt.setPrivateKey(privateKey);
     return jsEncrypt.decrypt(message);
@@ -138,7 +139,7 @@ export default function Home() {
         let encrypted = event.data.slice(5);
 
         let privateKey = await getPrivateKey();
-        let decryptedString = decrypt(encrypted, privateKey);
+        let decryptedString = await decrypt(encrypted, privateKey);
         setHistory((prev: any) => [...prev, 'Peer: ' + decryptedString]);
       }
       else{
@@ -165,7 +166,7 @@ export default function Home() {
     setHistory((prev: any) => [...prev, 'You: ' + text]);
 
     let publicKey = await getPeerPublicKey();
-    let encryptedString = encrypt(text, publicKey);
+    let encryptedString = await encrypt(text, publicKey);
     socket.send("msg: " + encryptedString);
     setMessage('');
     setChatStarted(true);
