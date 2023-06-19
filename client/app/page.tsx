@@ -254,7 +254,14 @@ export default function Home() {
                   value={message}
                   onChange={(e) => setMessage(e.target.value)}
                   placeholder="Enter a message..." 
-                  autoFocus={true}></input>
+                  autoFocus={true}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      handleSendMessage();
+                    }
+                  }}>
+                </input>
             </div>
             <div className="btns">
                 <button className="btn send" onClick={handleSendMessage}>Send</button>
