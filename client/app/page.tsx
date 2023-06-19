@@ -61,7 +61,6 @@ export default function Home() {
     );
     setKeyPair(localKeyPair);
     console.log('Generated key pair: ', localKeyPair);
-    console.log('value', keyPair);
   }
 
   const getOwnPublicKey = async () => {
