@@ -89,6 +89,7 @@ func TestServer_processERROR(t *testing.T) {
 }
 
 func createMockServer(c *Client, t *testing.T) *httptest.Server {
+	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		openClientConnection(c, t, w, r)
 	}))
