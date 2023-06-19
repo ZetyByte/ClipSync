@@ -181,7 +181,7 @@ export default function Home() {
 
   const handlePaste = async () => {
     try {
-      const permissionStatus = await navigator.permissions.query({name: 'clipboard-read'});
+      const permissionStatus = await navigator.permissions.query({name: 'clipboard-read' as PermissionName});
       switch (permissionStatus.state) {
         case "granted":
           const text = await navigator.clipboard.readText();
@@ -206,7 +206,7 @@ export default function Home() {
         {status === 'disconnected' && clientId &&
         <div>
           <QRCodeSVG value={`${window.location.href}?id=${clientId}`} includeMargin={true} size={192}/>
-          <p>Client ID: http://localhost:3000?id={clientId}</p>
+          <p>Client ID: {clientId}</p>
         </div>}
 
         <div className="status">
