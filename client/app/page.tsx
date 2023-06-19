@@ -5,12 +5,11 @@ import { QRCodeSVG } from 'qrcode.react';
 import { BiCopy } from 'react-icons/bi';
 import './style.css'
 import { strict } from 'assert';
+import JSEncrypt from 'jsencrypt';
 
 const { subtle } = globalThis.crypto;
 
 const serverUrl = "ws://localhost:8080/ws";
-
-let tempKeyPair: CryptoKeyPair | null = null; // TODO: remove when reactive state is working
 
 export default function Home() {
   const [message, setMessage] = useState('');
@@ -20,20 +19,24 @@ export default function Home() {
   const [socket, setSocket] = useState<WebSocket | null>(null);
   const [clientId, setClientId] = useState<string | null>(null);
   const [chatStarted, setChatStarted] = useState(false);
-  const [keyPair, setKeyPair] = useState<CryptoKeyPair | null>(null); // TODO: make this work
+  const [keyPair, setKeyPair] = useState<CryptoKeyPair | null>(null);
   const [peerPublicKey, setPeerPublicKey] = useState<CryptoKey | null>(null);
 
   useEffect(() => {
-    generateKeyPair(null);
-    const script = document.createElement("script");
-    script.src = "/asset/js/jsencrypt.min.js";
-    script.async = true;
-    document.body.appendChild(script); 
-  }, [1]);
-
-  useEffect(() => {
-    console.log("useEffect keypair: ", keyPair);
+    if (keyPair)
+    {
+      connectWebSocket();
+      return () => {
+        if (socket)
+          socket!.close();
+      }
+    }
   }, [keyPair]);
+  
+  useEffect(() => {
+    generateKeyPair();
+  }, []);
+
 
   const encrypt = (message: string, publicKey: string) => {
     const jsEncrypt = new JSEncrypt();
@@ -47,7 +50,7 @@ export default function Home() {
     return jsEncrypt.decrypt(message);
   }
 
-  const generateKeyPair = async (e: any) => {
+  const generateKeyPair = async () => {
     let localKeyPair = await subtle.generateKey(
       {
         name: "RSA-OAEP",
@@ -59,12 +62,11 @@ export default function Home() {
       ["encrypt", "decrypt"]
     );
     setKeyPair(localKeyPair);
-    tempKeyPair = localKeyPair;
     console.log('Generated key pair: ', localKeyPair);
   }
 
   const getOwnPublicKey = async () => {
-    let publicKeyBuffer = await subtle.exportKey("spki", tempKeyPair!.publicKey);
+    let publicKeyBuffer = await subtle.exportKey("spki", keyPair!.publicKey);
     let publicKey = Buffer.from(publicKeyBuffer).toString('base64');
     return publicKey;
   }
@@ -87,7 +89,7 @@ export default function Home() {
   }
 
   const getPrivateKey = async () => {
-    let privateKeyBuffer = await subtle.exportKey("pkcs8", tempKeyPair!.privateKey)
+    let privateKeyBuffer = await subtle.exportKey("pkcs8", keyPair!.privateKey)
     let privateKey = Buffer.from(privateKeyBuffer).toString('base64');
     return privateKey;
   }
@@ -151,14 +153,6 @@ export default function Home() {
       connectWebSocket();
     });};
 
-  useEffect(() => {
-    connectWebSocket();
-
-    return () => {
-      socket!.close();
-    }
-  }, []);
-
   const sendMessage = async (text: string) => {
     if (!socket || socket.readyState !== WebSocket.OPEN) {
       return;
@@ -183,6 +177,7 @@ export default function Home() {
 
   const clearMessages = () => {
     setHistory([]);
+    setChatStarted(false);
   };
 
   const copyToClipboard = (message: string) => {

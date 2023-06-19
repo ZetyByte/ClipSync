@@ -13,7 +13,7 @@ type Server struct {
 	registerID chan *Client
 }
 
-// Processes second clients (the ones than connected by ID).
+// Processes second clients (the ones that connected by ID).
 func (s *Server) process(flag chan bool) {
 	for {
 		select {
