@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
+import { BiCopy } from 'react-icons/bi';
 import './style.css'
 import { strict } from 'assert';
 
@@ -13,6 +14,7 @@ let tempKeyPair: CryptoKeyPair | null = null; // TODO: remove when reactive stat
 
 export default function Home() {
   const [message, setMessage] = useState('');
+  const [copiedMessage, setCopiedMessage] = useState('');
   const [history, setHistory] = useState<string[]>([]); 
   const [status, setStatus] = useState('disconnected');
   const [socket, setSocket] = useState<WebSocket | null>(null);
@@ -183,9 +185,15 @@ export default function Home() {
     setHistory([]);
   };
 
+  const copyToClipboard = (message: string) => {
+    const messageWithoutPrefix = message.replace(/^(You|Peer):\s*/, '');
+    navigator.clipboard.writeText(messageWithoutPrefix);
+    setCopiedMessage(message);
+  };
+
   const handlePaste = async () => {
     try {
-      const permissionStatus = await navigator.permissions.query({name: 'clipboard-read'});
+      const permissionStatus = await navigator.permissions.query({name: 'clipboard-read' as PermissionName});
       switch (permissionStatus.state) {
         case "granted":
           const text = await navigator.clipboard.readText();
@@ -223,7 +231,23 @@ export default function Home() {
             <div className="title">Messages:</div>
             <div className="message-box">
                 <div className="message-panel"></div>
-                <div id="message" className="dark:bg-slate-900"><pre>{history.join('\n')}</pre></div>
+                <div id="message" className="dark:bg-slate-900">
+                  <pre>
+                    {history.map((msg, index) => (
+                      <div key={index}>
+                        {msg}
+                        {msg !== copiedMessage && (
+                          <button
+                            className="copy-btn"
+                            onClick={() => copyToClipboard(msg)}
+                          >
+                            <BiCopy />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </pre>
+                </div>
                 <input 
                   type="text"
                   className="dark:bg-black"

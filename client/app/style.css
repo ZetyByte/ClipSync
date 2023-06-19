@@ -155,6 +155,24 @@ input[type="text"] {
   color:black;
 }
 
+.copy-btn {
+  background-color: #4CAF50;
+  border: none;
+  color: white;
+  padding: 4px 8px;
+  text-align: center;
+  text-decoration: none;
+  display: inline-block;
+  font-size: 12px;
+  margin-left: 4px;
+  cursor: pointer;
+  border-radius: 5px;
+}
+
+.copy-btn:hover {
+  background-color: #45a049;
+}
+
 .hide {
   height: 28px;
   float: right;
