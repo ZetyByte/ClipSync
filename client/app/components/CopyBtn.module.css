@@ -1,0 +1,25 @@
+.copy-btn {
+    background-color: #4CAF50;
+    border: none;
+    color: white;
+    padding: 4px 8px;
+    text-align: center;
+    text-decoration: none;
+    display: inline-block;
+    font-size: 12px;
+    margin-left: 4px;
+    cursor: pointer;
+    border-radius: 5px;
+    transition: all 0.3s ease 0s;
+  }
+  
+  .copy-btn:hover {
+    background-color: #45a049;
+  }
+
+  .copy-btn:active {
+    background-color: #45a049;
+    box-shadow: 0 5px #666;
+    transform: translateY(4px);
+  }
+  
