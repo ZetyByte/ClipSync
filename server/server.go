@@ -24,9 +24,8 @@ func (s *Server) process(flag chan bool) {
 				pairClients(client, peer)
 
 				// Send message to both clients that they are connected to change the state of the pages.
-				sendConnectedMessage(client.conn)
-				sendConnectedMessage(peer.conn)
-
+				client.onConnect()
+				peer.onConnect()
 				// Delete paired client from the queue.
 				delete(s.clients, client.peerID)
 			} else {
@@ -42,10 +41,6 @@ func (s *Server) process(flag chan bool) {
 func pairClients(client1, client2 *Client) {
 	client1.pair = client2
 	client2.pair = client1
-}
-
-func sendConnectedMessage(conn *websocket.Conn) {
-	conn.WriteMessage(websocket.TextMessage, []byte("connected"))
 }
 
 func handleInvalidID(client *Client) {

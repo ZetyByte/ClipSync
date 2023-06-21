@@ -4,7 +4,6 @@ import React, { useEffect, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { BiCopy } from 'react-icons/bi';
 import './style.css'
-import { strict } from 'assert';
 
 const { subtle } = globalThis.crypto;
 
@@ -16,7 +15,7 @@ export default function Home() {
   const [history, setHistory] = useState<string[]>([]); 
   const [status, setStatus] = useState('disconnected');
   const [socket, setSocket] = useState<WebSocket | null>(null);
-  const [clientId, setClientId] = useState<string | null>(null);
+  const [clientId, setClientId] = useState<string | false>(false);
   const [chatStarted, setChatStarted] = useState(false);
   const [keyPair, setKeyPair] = useState<CryptoKeyPair | null>(null);
   const [peerPublicKey, setPeerPublicKey] = useState<CryptoKey | null>(null);
@@ -48,7 +47,11 @@ export default function Home() {
     const JSEncrypt = (await import('jsencrypt')).default
     const jsEncrypt = new JSEncrypt();
     jsEncrypt.setPrivateKey(privateKey);
-    return jsEncrypt.decrypt(message);
+    var decripted = jsEncrypt.decrypt(message);
+    console.log('Message: ', message);
+    console.log('Private key: ', privateKey);
+    console.log('Decripted: ', decripted);
+    return decripted;
   }
 
   const generateKeyPair = async () => {
@@ -75,6 +78,7 @@ export default function Home() {
   const sendPublicKey = async (socket: WebSocket) => {
     let publicKey = await getOwnPublicKey();
     socket.send('public-key: ' + publicKey);
+    console.log('Sent public key: ', publicKey);
   }
 
   const importAndSetPeerPublicKey = async (key: string) => {
@@ -104,11 +108,12 @@ export default function Home() {
   const connectWebSocket = () => {
     let url = getUrl();
     const socket = new WebSocket(url);
-    setSocket(socket);
 
     // Connection opened
     socket.addEventListener('open', (event) => {
       console.log('WebSocket connection established.');
+      sendPublicKey(socket!);
+      setSocket(socket);
     });
 
     // Listen for messages
@@ -119,15 +124,16 @@ export default function Home() {
         socket.send('pong');
 
       } else if (event.data === 'connected') {
-        sendPublicKey(socket!);
         setStatus('connected');
         setChatStarted(true);
 
       } else if (event.data.slice(0,11) === 'client-id: '){
         let clientId = event.data.slice(11);
+        let privateKey = await getPrivateKey();
+        var decryptedID = await decrypt(clientId, privateKey);
         console.log('Received client id: ', clientId);
-        setClientId(clientId);
-
+        console.log('Received decripted client id: ', decryptedID);
+        setClientId(decryptedID);
       } else if (event.data.slice(0, 12) === 'public-key: ') {
         console.log('Received public key: ', event.data.slice(12));
         let key = event.data.slice(12);

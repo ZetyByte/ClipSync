@@ -1,6 +1,13 @@
 package main
 
 import (
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/sha256"
+	"crypto/x509"
+	"encoding/base64"
+	"encoding/pem"
+	"fmt"
 	"log"
 	"net/http"
 	"sync"
@@ -22,6 +29,9 @@ const (
 
 	// Maximum message size allowed from peer.
 	maxMessageSize = 4096
+
+	// Time allowed to get Key from the client.
+	getKeyWait = 10 * time.Second
 )
 
 type Client struct {
@@ -36,6 +46,8 @@ type Client struct {
 	pair *Client
 
 	mutex sync.Mutex
+
+	publicKey []byte
 }
 
 var upgrader = websocket.Upgrader{
@@ -113,6 +125,11 @@ func (c *Client) readData() {
 	}
 }
 
+func (c *Client) onConnect() {
+	c.conn.WriteMessage(websocket.TextMessage, []byte("connected"))
+	c.conn.WriteMessage(websocket.TextMessage, c.publicKey)
+}
+
 // Handle creates a new client and lets the server process it.
 func handle(s *Server, w http.ResponseWriter, r *http.Request, m *sync.Mutex) {
 	log.Println("New client connected")
@@ -126,12 +143,24 @@ func handle(s *Server, w http.ResponseWriter, r *http.Request, m *sync.Mutex) {
 		return
 	}
 	conn.SetReadLimit(maxMessageSize)
+	conn.SetReadDeadline(time.Now().Add(getKeyWait))
 
 	client := Client{
 		server:      s,
 		conn:        conn,
 		sendMessage: make(chan string),
 	}
+
+	var publicKey string
+	if _, message, err := conn.ReadMessage(); err != nil {
+		log.Println("Error reading message:", err)
+		client.closeConnection()
+		return
+	} else {
+		client.publicKey = message
+		publicKey = string(message)[12:]
+	}
+	log.Println("Public key:", publicKey)
 
 	// Read ID from query.
 	// If ID is empty, then it is the first client, it is added to the map of clients using its ID from header
@@ -141,7 +170,7 @@ func handle(s *Server, w http.ResponseWriter, r *http.Request, m *sync.Mutex) {
 		ok := true
 		for ok {
 			id = uuid.New().String()
-
+			id = "49fe9607-07c6-4df3-a571-6c6b964d1331"
 			m.Lock()
 			_, ok = s.clients[id]
 			m.Unlock()
@@ -151,7 +180,14 @@ func handle(s *Server, w http.ResponseWriter, r *http.Request, m *sync.Mutex) {
 		s.clients[id] = &client
 		m.Unlock()
 
-		if err = conn.WriteMessage(websocket.TextMessage, []byte("client-id: "+id)); err != nil {
+		encrypted, err := encryptMessage(publicKey, []byte(id))
+		if err != nil {
+			log.Println("Error encrypting message:", err)
+			client.closeConnection()
+			return
+		}
+
+		if err = conn.WriteMessage(websocket.TextMessage, []byte("client-id: "+encrypted)); err != nil {
 			log.Println("Error writing message:", err)
 			return
 		}
@@ -164,3 +200,92 @@ func handle(s *Server, w http.ResponseWriter, r *http.Request, m *sync.Mutex) {
 	go client.writeData()
 	go client.sendPing()
 }
+
+func encryptMessage(base64SPKI string, message []byte) (string, error) {
+	// Decode the Base64 string
+	decodedKey, err := base64.StdEncoding.DecodeString(base64SPKI)
+	if err != nil {
+		fmt.Println("Failed to decode Base64 key:", err)
+		return "", err
+	}
+
+	// Create a PEM block using the decoded key
+	pemBlock := &pem.Block{
+		Type:  "RSA PUBLIC KEY",
+		Bytes: decodedKey,
+	}
+
+	// Encode the PEM block to PEM format
+	pemPublicKey := pem.EncodeToMemory(pemBlock)
+	block, _ := pem.Decode(pemPublicKey)
+	if block == nil {
+		fmt.Println("Failed to decode PEM block containing public key")
+		return "", err
+	}
+	publicKey, err := x509.ParsePKIXPublicKey(block.Bytes)
+	if err != nil {
+		fmt.Println("Failed to parse public key:", err)
+		return "", err
+	}
+	rsaPublicKey, ok := publicKey.(*rsa.PublicKey)
+	if !ok {
+		fmt.Println("Key type is not RSA")
+		return "", err
+	}
+
+	// Encrypt the message using the public key
+	encryptedMessage, err := rsa.EncryptOAEP(sha256.New(), rand.Reader, rsaPublicKey, message, nil)
+	if err != nil {
+		fmt.Println("Failed to encrypt message:", err)
+		return "", err
+	}
+	converted := base64.StdEncoding.EncodeToString(encryptedMessage)
+	fmt.Println("Encrypted message:", string(converted))
+	return string(converted), nil
+}
+
+/*
+	func encryptMessage(base64SPKI string, message []byte) (string, error) {
+		log.Println("Encrypting message:", string(message))
+		// Decode the base64-encoded public key string
+		publicKeyBytes, err := base64.StdEncoding.DecodeString(base64SPKI)
+		if err != nil {
+			log.Println("Error decoding base64 string:", err)
+			return "", err
+		}
+
+		publicKey, err := x509.ParsePKIXPublicKey(publicKeyBytes)
+		if err != nil {
+			log.Println("Error parsing public key:", err)
+			return "", err
+		}
+		log.Println("Public key:", publicKey)
+		rsaPublicKey, ok := publicKey.(*rsa.PublicKey)
+		if !ok {
+			return "", fmt.Errorf("not an RSA public key")
+		}
+		log.Println("RSA public key:", rsaPublicKey)
+		// Encrypt the string using the public key
+		ciphertext, err := rsa.EncryptOAEP(sha256.New(), rand.Reader, rsaPublicKey, message, nil)
+		if err != nil {
+			return "", err
+		}
+
+		encryptedMessageBase64 := base64.StdEncoding.EncodeToString(ciphertext)
+		log.Println("Encrypted message:", encryptedMessageBase64)
+
+		bytes, err := x509.MarshalPKIXPublicKey(rsaPublicKey)
+
+		// Create a PEM block for the public key
+		pemBlock := &pem.Block{
+			Type:  "PUBLIC KEY",
+			Bytes: bytes,
+		}
+
+		// Encode the PEM block to a string
+		publicKeyString := string(pem.EncodeToMemory(pemBlock))
+
+		fmt.Println(publicKeyString)
+		return encryptedMessageBase64, nil
+	}
+*/
