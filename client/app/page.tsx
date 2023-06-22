@@ -4,7 +4,6 @@ import React, { useEffect, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { BiCopy } from 'react-icons/bi';
 import './style.css'
-import { strict } from 'assert';
 import JSEncrypt from 'jsencrypt';
 
 const { subtle } = globalThis.crypto;
@@ -21,6 +20,11 @@ export default function Home() {
   const [chatStarted, setChatStarted] = useState(false);
   const [keyPair, setKeyPair] = useState<CryptoKeyPair | null>(null);
   const [peerPublicKey, setPeerPublicKey] = useState<CryptoKey | null>(null);
+  const [isConnecting, setIsConnecting] = useState(false);
+  const [error, setError] = useState("");
+  const [pairInfo, setPairInfo] = useState<string | boolean>("");
+  const [pairingAccepted, setPairingAccepted] = useState(false);
+  const [peerAccepted, setPeerAccepted] = useState(false);
 
   useEffect(() => {
     if (keyPair)
@@ -32,19 +36,50 @@ export default function Home() {
       }
     }
   }, [keyPair]);
+
+  useEffect(() => {
+    if (pairingAccepted && peerAccepted)
+      setStatus('connected');
+  }, [pairingAccepted, peerAccepted]);
   
   useEffect(() => {
-    generateKeyPair();
-  }, []);
+    if (isConnecting)
+      generateKeyPair();
+  }, [isConnecting]);
+
+  useEffect(() => {
+    console.log('Status changed: ', socket);
+    if (peerPublicKey && socket)
+      sendClientInfo();
+  }, [peerPublicKey, socket]);
 
 
-  const encrypt = (message: string, publicKey: string) => {
+  const disconnectClient = () => {
+    if (socket)
+      socket.close();
+    setHistory([]);
+    setStatus('disconnected');
+    setClientId(null);
+    setChatStarted(false);
+    setKeyPair(null);
+    setPeerPublicKey(null);
+    setIsConnecting(false);
+    setPairInfo("");
+    setPairingAccepted(false);
+    setPeerAccepted(false);
+  }
+
+  const encrypt = async (message: string) => {
+    let publicKeyBuffer = await subtle.exportKey("spki", peerPublicKey!)
+    let publicKey = Buffer.from(publicKeyBuffer).toString('base64');
     const jsEncrypt = new JSEncrypt();
     jsEncrypt.setPublicKey(publicKey);
     return jsEncrypt.encrypt(message);
   }
 
-  const decrypt = (message: string, privateKey: string) => {
+  const decrypt = async (message: string) => {
+    let privateKeyBuffer = await subtle.exportKey("pkcs8", keyPair!.privateKey)
+    let privateKey = Buffer.from(privateKeyBuffer).toString('base64');
     const jsEncrypt = new JSEncrypt();
     jsEncrypt.setPrivateKey(privateKey);
     return jsEncrypt.decrypt(message);
@@ -65,16 +100,13 @@ export default function Home() {
     console.log('Generated key pair: ', localKeyPair);
   }
 
-  const getOwnPublicKey = async () => {
-    let publicKeyBuffer = await subtle.exportKey("spki", keyPair!.publicKey);
-    let publicKey = Buffer.from(publicKeyBuffer).toString('base64');
-    return publicKey;
-  }
 
   const sendPublicKey = async (socket: WebSocket) => {
-    let publicKey = await getOwnPublicKey();
+    let publicKeyBuffer = await subtle.exportKey("spki", keyPair!.publicKey);
+    let publicKey = Buffer.from(publicKeyBuffer).toString('base64');
     socket.send('public-key: ' + publicKey);
   }
+
 
   const importAndSetPeerPublicKey = async (key: string) => {
     let publicKey = await subtle.importKey("spki", Buffer.from(key, 'base64'), {name: "RSA-OAEP", hash: "SHA-256"}, true, ["encrypt"]);
@@ -82,17 +114,6 @@ export default function Home() {
     console.log('Imported public key: ', publicKey);
   }
 
-  const getPeerPublicKey = async () => {
-    let publicKeyBuffer = await subtle.exportKey("spki", peerPublicKey!)
-    let publicKey = Buffer.from(publicKeyBuffer).toString('base64');
-    return publicKey;
-  }
-
-  const getPrivateKey = async () => {
-    let privateKeyBuffer = await subtle.exportKey("pkcs8", keyPair!.privateKey)
-    let privateKey = Buffer.from(privateKeyBuffer).toString('base64');
-    return privateKey;
-  }
 
   const getUrl = () => {
     const urlParams = new URLSearchParams(window.location.search);
@@ -102,25 +123,29 @@ export default function Home() {
 
   const connectWebSocket = () => {
     let url = getUrl();
-    const socket = new WebSocket(url);
+    var socket = new WebSocket(url);
     setSocket(socket);
 
     // Connection opened
-    socket.addEventListener('open', (event) => {
+    socket.addEventListener('open', async (event) => {
       console.log('WebSocket connection established.');
+      setError("");
     });
 
     // Listen for messages
     socket.addEventListener('message', async (event) => {
       console.log('Received message: ', event.data);
-      console.log("keyPair: ", keyPair);
       if (event.data === 'ping') {
         socket.send('pong');
 
+      } else if (event.data.slice(0, 13) === 'client-info: ') {
+        let encrypted = event.data.slice(13);
+        let decrypted = await decrypt(encrypted);
+        console.log('Decrypted client info: ', decrypted);
+        setPairInfo(decrypted);
+
       } else if (event.data === 'connected') {
         sendPublicKey(socket!);
-        setStatus('connected');
-        setChatStarted(true);
 
       } else if (event.data.slice(0,11) === 'client-id: '){
         let clientId = event.data.slice(11);
@@ -130,28 +155,59 @@ export default function Home() {
       } else if (event.data.slice(0, 12) === 'public-key: ') {
         console.log('Received public key: ', event.data.slice(12));
         let key = event.data.slice(12);
-        importAndSetPeerPublicKey(key)
+        importAndSetPeerPublicKey(key);
 
       } else if (event.data.slice(0, 5) === 'msg: ') {
         // Q: Why use msg: prefix?
         // A: Maybe someone sends a message that starts with 'client-id: ' or 'public-key: '?
         let encrypted = event.data.slice(5);
 
-        let privateKey = await getPrivateKey();
-        let decryptedString = decrypt(encrypted, privateKey);
+        let decryptedString = await decrypt(encrypted);
         setHistory((prev: any) => [...prev, 'Peer: ' + decryptedString]);
+        setChatStarted(true);
+      }
+      else if(event.data === 'accept-pairing'){
+        setPeerAccepted(true);
       }
       else{
         console.log('Received unknown message: ', event.data);
       }
     });
 
-    // Connection closed
+
     socket.addEventListener('close', (event) => {
-      console.log('WebSocket connection closed.');
-      setStatus('disconnected');
-      connectWebSocket();
+      console.log('WebSocket connection closed.', event.reason);
+      if (event.reason === 'Client with this ID does not exist')
+      {
+        setError("id-not-found");
+      }
+      else 
+      {
+        setError("server-error");
+      }
+      disconnectClient();
     });};
+
+
+    const sendClientInfo = async () => {
+      console.log('Sending client info...');
+      let encryptedString = await encrypt("device: " + navigator.userAgent);
+      socket!.send("client-info: " + encryptedString);
+      console.log('Sent client info: ', encryptedString);
+    }
+
+
+    const acceptPairing = async () => {
+      setPairingAccepted(true);
+      socket!.send('accept-pairing');
+      setPairInfo('');
+    }
+
+    const rejectPairing = async () => {
+      disconnectClient();
+      setError("Pairing was rejected. Try again.");
+    }
+
 
   const sendMessage = async (text: string) => {
     if (!socket || socket.readyState !== WebSocket.OPEN) {
@@ -164,27 +220,30 @@ export default function Home() {
     
     setHistory((prev: any) => [...prev, 'You: ' + text]);
 
-    let publicKey = await getPeerPublicKey();
-    let encryptedString = encrypt(text, publicKey);
+    let encryptedString = encrypt(text);
     socket.send("msg: " + encryptedString);
     setMessage('');
     setChatStarted(true);
   };
 
+
   const handleSendMessage = async () => {
     await sendMessage(message);
   };
+
 
   const clearMessages = () => {
     setHistory([]);
     setChatStarted(false);
   };
 
+
   const copyToClipboard = (message: string) => {
     const messageWithoutPrefix = message.replace(/^(You|Peer):\s*/, '');
     navigator.clipboard.writeText(messageWithoutPrefix);
     setCopiedMessage(message);
   };
+
 
   const handlePaste = async () => {
     try {
@@ -208,18 +267,43 @@ export default function Home() {
   };
 
 
+  const disconnectButton = () => {
+    disconnectClient();
+    setError("");
+  }
+
   return (<main>
     <div className="container">
-        {status === 'disconnected' && clientId &&
+        {status === 'disconnected' && !isConnecting &&
+        <div>
+          {error === "id-not-found" && 
+            <div className='error'>Client with this ID does not exist.</div>
+          }
+          {error === "server-error" &&
+            <div className='error'>Connection error. Please try again.</div>
+          }
+          <button className='btn' onClick={() => setIsConnecting(true)}>Connect</button>
+        </div>
+        }
+        {status === 'disconnected' && clientId && isConnecting &&
         <div>
           <QRCodeSVG value={`${window.location.href}?id=${clientId}`} includeMargin={true} size={192}/>
-          <p>Client ID: {clientId}</p>
-        </div>}
+          <a href={`${window.location.href}?id=${clientId}`}>Client ID: http://localhost:3000?id={clientId}</a>
+        </div>
+        }
 
         <div className="status">
             <div className="title">Status: {status}</div>
             <div id="status"></div>
         </div>
+        {pairInfo &&
+        <div className="pair-info">
+          <p>Do you want to connect to this device?</p>
+          <p>Device: {pairInfo}</p>
+          <button className='btn' onClick={acceptPairing}>Yes</button>
+          <button className='btn' onClick={() => rejectPairing()}>No</button>
+        </div>
+        }
 
         {(status === 'connected' || chatStarted) &&
          <div className="messages">
@@ -262,6 +346,7 @@ export default function Home() {
                 <button className="btn send" onClick={handleSendMessage}>Send</button>
                 <button className="btn clearMsg" onClick={clearMessages}>Clear Messages (Locally)</button>  
                 <button className="btn past-clipbrd" onClick={handlePaste}>Paste clipboard</button>
+                <button className='btn' onClick={() => disconnectButton()}>Disconnect</button>
             </div>            
         </div>}
     </div>

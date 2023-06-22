@@ -117,7 +117,7 @@ func (c *Client) readData() {
 func handle(s *Server, w http.ResponseWriter, r *http.Request, m *sync.Mutex) {
 	log.Println("New client connected")
 
-	// added for testing purposes
+	// TODO: remove in production (added for testing purposes)
 	upgrader.CheckOrigin = func(r *http.Request) bool { return true }
 
 	conn, err := upgrader.Upgrade(w, r, nil)
