@@ -5,6 +5,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import { BiCopy } from 'react-icons/bi';
 import './style.css'
 import { strict } from 'assert';
+// import Rtc from './rtc'
 
 const { subtle } = globalThis.crypto;
 
@@ -211,6 +212,7 @@ export default function Home() {
 
   return (<main>
     <div className="container">
+      {/* <Rtc /> */}
         {status === 'disconnected' && clientId &&
         <div>
           <QRCodeSVG value={`${window.location.href}?id=${clientId}`} includeMargin={true} size={192}/>
