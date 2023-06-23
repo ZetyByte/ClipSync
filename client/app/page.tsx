@@ -25,6 +25,8 @@ export default function Home() {
   const [pairInfo, setPairInfo] = useState<string | boolean>("");
   const [pairingAccepted, setPairingAccepted] = useState(false);
   const [peerAccepted, setPeerAccepted] = useState(false);
+  //const [peerName, setPeerName] = useState('Peer');
+  let peerName;
 
   useEffect(() => {
     if (keyPair)
@@ -67,6 +69,14 @@ export default function Home() {
     setPairInfo("");
     setPairingAccepted(false);
     setPeerAccepted(false);
+  }
+
+  const generatePeerName = () => {
+    let adjectives = ['Amazing', 'Awesome', 'Beautiful', 'Brave', 'Bright', 'Calm', 'Clever', 'Cool', 'Cute', 'Dazzling', 'Elegant', 'Enchanting', 'Fabulous', 'Fantastic', 'Friendly', 'Funny', 'Gentle', 'Glamorous', 'Gorgeous', 'Graceful', 'Handsome', 'Happy', 'Healthy', 'Helpful', 'Hilarious', 'Humorous', 'Jolly', 'Joyous', 'Kind', 'Lively', 'Lovely', 'Lucky', 'Magnificent', 'Nice', 'Perfect', 'Pleasant', 'Proud', 'Silly', 'Smiling', 'Splendid', 'Successful', 'Thoughtful', 'Victorious', 'Vivacious', 'Witty', 'Wonderful'];
+
+    let nouns = ['Apple', 'Banana', 'Bread', 'Butter', 'Cake', 'Carrot', 'Cheese', 'Chicken', 'Chocolate', 'Cookie', 'Cucumber', 'Egg', 'Fish', 'Garlic', 'Grape', 'Honey', 'Ice cream', 'Juice', 'Lemon', 'Lime', 'Mango', 'Milk', 'Mushroom', 'Noodles', 'Olive', 'Onion', 'Orange', 'Pasta', 'Peach', 'Pear', 'Pepper', 'Pineapple', 'Pizza', 'Potato', 'Pumpkin', 'Rice', 'Salad', 'Sandwich', 'Sausage', 'Soup', 'Steak', 'Strawberry', 'Tomato', 'Watermelon'];
+    
+    return adjectives[Math.floor(Math.random() * adjectives.length) + 1] + ' ' + nouns[Math.floor(Math.random() * nouns.length) + 1 ];
   }
 
   const encrypt = async (message: string) => {
@@ -191,7 +201,11 @@ export default function Home() {
 
     const sendClientInfo = async () => {
       console.log('Sending client info...');
-      let encryptedString = await encrypt("device: " + navigator.userAgent);
+      peerName = generatePeerName();
+      //setPeerName(generatePeerName());
+    //   let encryptedString = await encrypt("device: " + navigator.userAgent);
+      let encryptedString = await encrypt("Name:" + peerName);
+
       socket!.send("client-info: " + encryptedString);
       console.log('Sent client info: ', encryptedString);
     }
@@ -288,7 +302,9 @@ export default function Home() {
         {status === 'disconnected' && clientId && isConnecting &&
         <div>
           <QRCodeSVG value={`${window.location.href}?id=${clientId}`} includeMargin={true} size={192}/>
-          <a href={`${window.location.href}?id=${clientId}`}>Client ID: http://localhost:3000?id={clientId}</a>
+          <h3> Your name is {peerName} </h3>.
+            <p>Scan the QR code with your phone to connect or </p>
+          <a target="_blank" href={`${window.location.href}?id=${clientId}` } >Open a peer in new tab</a>
         </div>
         }
 
