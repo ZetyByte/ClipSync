@@ -67,12 +67,12 @@ func handleWebScoket(w http.ResponseWriter, r *http.Request){
 
 func processSignalingMessage(conn *websocket.Conn, message []byte){
 	var signalingData struct {
-		Type       string             `json:"type"`
+		Type           string             `json:"type"`
 		RoomID         string             `json:"id"`  
 		// SenderID   string             `json:"senderId"`
 		// TargetID   string             `json:"targetId"`
-		Offer      *SessionDescription `json:"offer,omitempty"`
-		Answer     *SessionDescription `json:"answer,omitempty"`
+		Offer          string             `json:"offer"`
+		Answer         string             `json:"answer,omitempty"`
 		// ICE        *ICECandidate       `json:"ice,omitempty"`
 	}
 
@@ -86,8 +86,10 @@ func processSignalingMessage(conn *websocket.Conn, message []byte){
 		handleCreateRoom(conn)
 	case "joinRoom":
 		hadnleJoinRoom(signalingData.RoomID, conn)
-	case "Offer":
-	case "Answer":
+	case "offer":
+		handleOffer(signalingData.RoomID, signalingData.Offer)
+	case "answer":
+		handleAnswer(signalingData.RoomID, signalingData.Answer)
 	}
 }
 
@@ -106,6 +108,22 @@ func handleCreateRoom(conn *websocket.Conn){
 func hadnleJoinRoom(id string, conn *websocket.Conn){
 	peersRooms[id] = append(peersRooms[id], conn)
 	if err := conn.WriteMessage(websocket.TextMessage, []byte("Connected succesfully to room with ID: " + id)); err != nil {
+		log.Println("Write error:", err)
+		return
+	}
+}
+
+func handleOffer(roomID, offer string){
+	target := peersRooms[roomID][1]
+	if err := target.WriteMessage(websocket.TextMessage, []byte(offer)); err != nil {
+		log.Println("Write error:", err)
+		return
+	}
+}
+
+func handleAnswer(roomID, answer string){
+	target := peersRooms[roomID][0]
+	if err := target.WriteMessage(websocket.TextMessage, []byte(answer)); err != nil {
 		log.Println("Write error:", err)
 		return
 	}
