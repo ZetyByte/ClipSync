@@ -189,9 +189,9 @@ export default function Home() {
       if (event.reason === 'Client with this ID does not exist')
       {
         setError("id-not-found");
-      }
-      else 
-      {
+      } else if (event.reason === "Client idle timeout reached") {
+        setError("idle-timeout-reached")
+      } else {
         setError("server-error");
       }
       disconnectClient();
@@ -294,6 +294,9 @@ export default function Home() {
           }
           {error === "server-error" &&
             <div className='error'>Connection error. Please try again.</div>
+          }
+          {error === "idle-timeout-reached" && 
+            <div className='error'>Idle timeout reached. You have been disconnected.</div>
           }
           <button className='btn' onClick={() => setIsConnecting(true)}>Connect</button>
         </div>
