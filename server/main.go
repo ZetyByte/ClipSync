@@ -17,6 +17,22 @@ var upgrader = websocket.Upgrader{
 	},
 }
 
+type Peer struct {
+	ID       string
+	Conn     *websocket.Conn
+	Offer    *SessionDescription
+	Answer   *SessionDescription
+	// ICEs     []*ICECandidate
+	IsAnswer bool
+}
+
+type SessionDescription struct {
+	Type string `json:"type"`
+	SDP  string `json:"sdp"`
+}
+
+var peers = make(map[string]*Peer)
+
 // Handle incoming WebSocket connections
 func handleWebScoket(w http.ResponseWriter, r *http.Request){
 	// Upgrade the HTTP connection to a WebSocket connection
