@@ -183,9 +183,12 @@ export default function Home() {
       }
     });
 
+    socket.addEventListener('error', (error) => {
+      console.error('WebSocket connection error:', error);
+    });    
 
     socket.addEventListener('close', (event) => {
-      console.log('WebSocket connection closed.', event.reason);
+      console.log('WebSocket connection closed: ', event.reason);
       if (event.reason === 'Client with this ID does not exist')
       {
         setError("id-not-found");
@@ -197,7 +200,7 @@ export default function Home() {
       disconnectClient();
     });};
 
-
+    
     const sendClientInfo = async () => {
       console.log('Sending client info...');
       var peerName = generatePeerName();
