@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"net/http"
+	"encoding/json"
 
 	"github.com/gorilla/websocket"
 )
@@ -31,7 +32,7 @@ type SessionDescription struct {
 	SDP  string `json:"sdp"`
 }
 
-var peers = make(map[string]*Peer)
+var peersRooms = make(map[string][]*websocket.Conn)
 
 // Handle incoming WebSocket connections
 func handleWebScoket(w http.ResponseWriter, r *http.Request){
@@ -45,7 +46,7 @@ func handleWebScoket(w http.ResponseWriter, r *http.Request){
 
 	// Handle incoming signaling messages
     for {
-        messageType, message, err := conn.ReadMessage()
+        _, message, err := conn.ReadMessage()
         if err != nil {
             log.Println("Read error:", err)
             break
@@ -54,12 +55,60 @@ func handleWebScoket(w http.ResponseWriter, r *http.Request){
         // Process the signaling message (e.g., forward it to other connected clients)
         log.Printf("Received message: %s", message)
 
+		processSignalingMessage(conn, message)
+
         // Send an acknowledgment response back to the sender if needed
-        if err = conn.WriteMessage(messageType, message); err != nil {
-            log.Println("Write error:", err)
-            break
-        }
+        // if err = conn.WriteMessage(messageType, message); err != nil {
+        //     log.Println("Write error:", err)
+        //     break
+        // }
     }
+}
+
+func processSignalingMessage(conn *websocket.Conn, message []byte){
+	var signalingData struct {
+		Type       string             `json:"type"`
+		RoomID         string             `json:"id"`  
+		// SenderID   string             `json:"senderId"`
+		// TargetID   string             `json:"targetId"`
+		Offer      *SessionDescription `json:"offer,omitempty"`
+		Answer     *SessionDescription `json:"answer,omitempty"`
+		// ICE        *ICECandidate       `json:"ice,omitempty"`
+	}
+
+	if err := json.Unmarshal(message, &signalingData); err != nil {
+		log.Println("Failed to unmarshal signaling message:", err)
+		return
+	}
+
+	switch signalingData.Type {
+	case "createRoom":
+		handleCreateRoom(conn)
+	case "joinRoom":
+		hadnleJoinRoom(signalingData.RoomID, conn)
+	case "Offer":
+	case "Answer":
+	}
+}
+
+func handleCreateRoom(conn *websocket.Conn){
+	id, err := generateRandomID(10)
+	if err != nil {
+		log.Println("Failed to generate ID:", err)
+	}
+	peersRooms[id] = append(peersRooms[id], conn)
+	if err = conn.WriteMessage(websocket.TextMessage, []byte(id)); err != nil {
+		log.Println("Write error:", err)
+		return
+	}
+}
+
+func hadnleJoinRoom(id string, conn *websocket.Conn){
+	peersRooms[id] = append(peersRooms[id], conn)
+	if err := conn.WriteMessage(websocket.TextMessage, []byte("Connected succesfully to room with ID: " + id)); err != nil {
+		log.Println("Write error:", err)
+		return
+	}
 }
 
 func main(){
