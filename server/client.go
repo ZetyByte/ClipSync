@@ -23,7 +23,7 @@ const (
 	// Maximum message size allowed from peer.
 	maxMessageSize = 4096
 
-	idleTimeout = time.Second * 20
+	idleTimeout = time.Second * 30
 )
 
 type Client struct {
@@ -36,8 +36,6 @@ type Client struct {
 	peerID string
 
 	pair *Client
-
-	mutex sync.Mutex
 
 	idleTimer *time.Timer
 }
@@ -52,8 +50,7 @@ func (c *Client) handleTimeout() {
 		select {
 		case <-c.idleTimer.C:
 			log.Println("Client idle timeout reached")
-			c.conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseInternalServerErr, "Client idle timeout reached"), time.Now().Add(time.Second*5))
-			c.conn.Close()
+			c.closeConnection(websocket.CloseInternalServerErr, "Client idle timeout reached")
 			return
 		}
 	}
@@ -66,20 +63,18 @@ func (c *Client) resetIdleTimer() {
 	c.idleTimer.Reset(idleTimeout)
 }
 
-func (c *Client) closeConnection() error {
-	c.mutex.Lock()
-	defer c.mutex.Unlock()
-
+func (c *Client) closeConnection(closeCode int, closeMessage string) error {
 	var err error
 
-	if c.pair != nil {
-		err = c.pair.conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseAbnormalClosure, "Closing connection"), time.Now().Add(time.Second*1))
+	if c.conn != nil {
+		err = c.conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(closeCode, closeMessage), time.Now().Add(time.Second*5))
+
 		if err != nil {
 			log.Println("Error writing control message:", err)
 			return err
 		}
 
-		err = c.pair.conn.Close()
+		err = c.conn.Close()
 		if err != nil {
 			log.Println("Error closing connection:", err)
 			return err
@@ -91,14 +86,17 @@ func (c *Client) closeConnection() error {
 
 // Writes data to websocket.
 func (c *Client) writeData() {
+	messageBytes := []byte{}
+
 	for {
 		if c.pair != nil {
 			message := <-c.pair.sendMessage
+			messageBytes = append(messageBytes[:0], message...)
 			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
-			err := c.conn.WriteMessage(websocket.TextMessage, []byte(message))
+			err := c.conn.WriteMessage(websocket.TextMessage, messageBytes)
 			if err != nil {
 				log.Println("Error writing message:", err)
-				c.closeConnection()
+				c.pair.closeConnection(websocket.CloseAbnormalClosure, "Closing connection")
 				return
 			}
 			c.resetIdleTimer()
@@ -107,13 +105,15 @@ func (c *Client) writeData() {
 }
 
 func (c *Client) sendPing() {
+	pingMessage := []byte("ping")
+
 	ticker := time.NewTicker(pingPeriod)
 	defer ticker.Stop()
 
 	for range ticker.C {
-		if err := c.conn.WriteControl(websocket.PingMessage, []byte("ping"), time.Now().Add(writeWait)); err != nil {
+		if err := c.conn.WriteControl(websocket.PingMessage, pingMessage, time.Now().Add(writeWait)); err != nil {
 			log.Println("Error sending ping:", err)
-			c.closeConnection()
+			c.pair.closeConnection(websocket.CloseAbnormalClosure, "Closing connection")
 			return
 		}
 	}
@@ -126,11 +126,12 @@ func (c *Client) readData() {
 		c.conn.SetReadDeadline(time.Now().Add(pongWait))
 		return nil
 	})
+
 	for {
 		_, message, err := c.conn.ReadMessage()
 		if err != nil {
 			log.Println("Error reading message:", err)
-			c.closeConnection()
+			c.pair.closeConnection(websocket.CloseAbnormalClosure, "Closing connection")
 			return
 		}
 		c.sendMessage <- string(message)

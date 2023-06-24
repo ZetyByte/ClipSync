@@ -27,7 +27,7 @@ func TestClient_closeConnection(t *testing.T) {
 	client2 := &Client{conn: conn2}
 	client1.pair = client2
 
-	err := client1.closeConnection()
+	err := client1.closeConnection(websocket.CloseAbnormalClosure, "Closing connection")
 
 	if err != nil {
 		t.Fatalf("closeConnection() returned an error: %v", err)
