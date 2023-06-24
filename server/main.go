@@ -18,20 +18,6 @@ var upgrader = websocket.Upgrader{
 	},
 }
 
-type Peer struct {
-	ID       string
-	Conn     *websocket.Conn
-	Offer    *SessionDescription
-	Answer   *SessionDescription
-	// ICEs     []*ICECandidate
-	IsAnswer bool
-}
-
-type SessionDescription struct {
-	Type string `json:"type"`
-	SDP  string `json:"sdp"`
-}
-
 var peersRooms = make(map[string][]*websocket.Conn)
 
 // Handle incoming WebSocket connections
@@ -69,11 +55,8 @@ func processSignalingMessage(conn *websocket.Conn, message []byte){
 	var signalingData struct {
 		Type           string             `json:"type"`
 		RoomID         string             `json:"id"`  
-		// SenderID   string             `json:"senderId"`
-		// TargetID   string             `json:"targetId"`
 		Offer          string             `json:"offer"`
 		Answer         string             `json:"answer,omitempty"`
-		// ICE        *ICECandidate       `json:"ice,omitempty"`
 	}
 
 	if err := json.Unmarshal(message, &signalingData); err != nil {
