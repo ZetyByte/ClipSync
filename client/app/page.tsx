@@ -25,8 +25,7 @@ export default function Home() {
   const [pairInfo, setPairInfo] = useState<string | boolean>("");
   const [pairingAccepted, setPairingAccepted] = useState(false);
   const [peerAccepted, setPeerAccepted] = useState(false);
-  //const [peerName, setPeerName] = useState('Peer');
-  let peerName;
+  const [clientName, setClientName] = useState('');
 
   useEffect(() => {
     if (keyPair)
@@ -201,11 +200,11 @@ export default function Home() {
 
     const sendClientInfo = async () => {
       console.log('Sending client info...');
-      peerName = generatePeerName();
+      var peerName = generatePeerName();
       //setPeerName(generatePeerName());
     //   let encryptedString = await encrypt("device: " + navigator.userAgent);
-      let encryptedString = await encrypt("Name:" + peerName);
-
+      let encryptedString = await encrypt(peerName);
+      setClientName(peerName);
       socket!.send("client-info: " + encryptedString);
       console.log('Sent client info: ', encryptedString);
     }
@@ -302,7 +301,6 @@ export default function Home() {
         {status === 'disconnected' && clientId && isConnecting &&
         <div>
           <QRCodeSVG value={`${window.location.href}?id=${clientId}`} includeMargin={true} size={192}/>
-          <h3> Your name is {peerName} </h3>.
             <p>Scan the QR code with your phone to connect or </p>
           <a target="_blank" href={`${window.location.href}?id=${clientId}` } >Open a peer in new tab</a>
         </div>
@@ -314,6 +312,7 @@ export default function Home() {
         </div>
         {pairInfo &&
         <div className="pair-info">
+          <p>Your name: {clientName}</p>
           <p>Do you want to connect to this device?</p>
           <p>Device: {pairInfo}</p>
           <button className='btn' onClick={acceptPairing}>Yes</button>
