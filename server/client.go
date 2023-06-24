@@ -22,6 +22,8 @@ const (
 
 	// Maximum message size allowed from peer.
 	maxMessageSize = 4096
+
+	idleTimeout = time.Second * 20
 )
 
 type Client struct {
@@ -36,11 +38,32 @@ type Client struct {
 	pair *Client
 
 	mutex sync.Mutex
+
+	idleTimer *time.Timer
 }
 
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
+}
+
+func (c *Client) handleTimeout() {
+	for {
+		select {
+		case <-c.idleTimer.C:
+			log.Println("Client idle timeout reached")
+			c.conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseInternalServerErr, "Client idle timeout reached"), time.Now().Add(time.Second*5))
+			c.conn.Close()
+			return
+		}
+	}
+}
+
+func (c *Client) resetIdleTimer() {
+	if !c.idleTimer.Stop() {
+		<-c.idleTimer.C
+	}
+	c.idleTimer.Reset(idleTimeout)
 }
 
 func (c *Client) closeConnection() error {
@@ -78,6 +101,7 @@ func (c *Client) writeData() {
 				c.closeConnection()
 				return
 			}
+			c.resetIdleTimer()
 		}
 	}
 }
@@ -110,6 +134,8 @@ func (c *Client) readData() {
 			return
 		}
 		c.sendMessage <- string(message)
+
+		c.resetIdleTimer()
 	}
 }
 
@@ -131,6 +157,7 @@ func handle(s *Server, w http.ResponseWriter, r *http.Request, m *sync.Mutex) {
 		server:      s,
 		conn:        conn,
 		sendMessage: make(chan string),
+		idleTimer:   time.NewTimer(time.Minute * 2), // Initial timer duration is a little longer than idleTimeout
 	}
 
 	// Read ID from query.
@@ -163,4 +190,5 @@ func handle(s *Server, w http.ResponseWriter, r *http.Request, m *sync.Mutex) {
 	go client.readData()
 	go client.writeData()
 	go client.sendPing()
+	go client.handleTimeout()
 }

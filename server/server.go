@@ -42,6 +42,9 @@ func (s *Server) process(flag chan bool) {
 func pairClients(client1, client2 *Client) {
 	client1.pair = client2
 	client2.pair = client1
+
+	client1.resetIdleTimer()
+	client2.resetIdleTimer()
 }
 
 func sendConnectedMessage(conn *websocket.Conn) {
