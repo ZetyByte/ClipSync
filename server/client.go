@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -64,13 +65,17 @@ func (c *Client) resetIdleTimer() {
 }
 
 func (c *Client) closeConnection(closeCode int, closeMessage string) error {
+	c.idleTimer.Stop() // to avoid potential goroutine leaks
 	var err error
 
 	if c.conn != nil {
 		err = c.conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(closeCode, closeMessage), time.Now().Add(time.Second*5))
 
 		if err != nil {
-			log.Println("Error writing control message:", err)
+			log.Println("Error writing control message:", err.Error())
+			if isCloseError(err) {
+				return nil
+			}
 			return err
 		}
 
@@ -96,6 +101,10 @@ func (c *Client) writeData() {
 			err := c.conn.WriteMessage(websocket.TextMessage, messageBytes)
 			if err != nil {
 				log.Println("Error writing message:", err)
+				if isCloseError(err) {
+					return
+				}
+				c.closeConnection(websocket.CloseAbnormalClosure, "Closing connection")
 				c.pair.closeConnection(websocket.CloseAbnormalClosure, "Closing connection")
 				return
 			}
@@ -113,6 +122,10 @@ func (c *Client) sendPing() {
 	for range ticker.C {
 		if err := c.conn.WriteControl(websocket.PingMessage, pingMessage, time.Now().Add(writeWait)); err != nil {
 			log.Println("Error sending ping:", err)
+			if isCloseError(err) {
+				return
+			}
+			c.closeConnection(websocket.CloseAbnormalClosure, "Closing connection")
 			c.pair.closeConnection(websocket.CloseAbnormalClosure, "Closing connection")
 			return
 		}
@@ -131,6 +144,10 @@ func (c *Client) readData() {
 		_, message, err := c.conn.ReadMessage()
 		if err != nil {
 			log.Println("Error reading message:", err)
+			if isCloseError(err) {
+				return
+			}
+			c.closeConnection(websocket.CloseAbnormalClosure, "Closing connection")
 			c.pair.closeConnection(websocket.CloseAbnormalClosure, "Closing connection")
 			return
 		}
@@ -192,4 +209,8 @@ func handle(s *Server, w http.ResponseWriter, r *http.Request, m *sync.Mutex) {
 	go client.writeData()
 	go client.sendPing()
 	go client.handleTimeout()
+}
+
+func isCloseError(err error) bool {
+	return strings.Contains(err.Error(), "use of closed network connection") || strings.Contains(err.Error(), "close sent")
 }
