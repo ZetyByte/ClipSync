@@ -18,7 +18,25 @@ var upgrader = websocket.Upgrader{
 	},
 }
 
+// Declare response type
+type Message struct {
+	Type 	string `json:"type"`
+	Payload string `json:"payload"`
+}
+
+// Peers' Rooms
 var peersRooms = make(map[string][]*websocket.Conn)
+
+func main(){
+	// Register the WebSocket handler
+	http.HandleFunc("/ws", handleWebScoket)
+
+	// Start the signaling server
+	log.Println("Signaling server started on http://localhost:8080")
+	if err := http.ListenAndServe(":8080", nil); err != nil {
+		log.Fatal("ListenAndServe error:", err)
+	}
+}
 
 // Handle incoming WebSocket connections
 func handleWebScoket(w http.ResponseWriter, r *http.Request){
@@ -42,12 +60,6 @@ func handleWebScoket(w http.ResponseWriter, r *http.Request){
         log.Printf("Received message: %s", message)
 
 		processSignalingMessage(conn, message)
-
-        // Send an acknowledgment response back to the sender if needed
-        // if err = conn.WriteMessage(messageType, message); err != nil {
-        //     log.Println("Write error:", err)
-        //     break
-        // }
     }
 }
 
@@ -55,8 +67,7 @@ func processSignalingMessage(conn *websocket.Conn, message []byte){
 	var signalingData struct {
 		Type           string             `json:"type"`
 		RoomID         string             `json:"id"`  
-		Offer          string             `json:"offer"`
-		Answer         string             `json:"answer,omitempty"`
+		SDP            string             `json:"sdp"`
 	}
 
 	if err := json.Unmarshal(message, &signalingData); err != nil {
@@ -70,55 +81,73 @@ func processSignalingMessage(conn *websocket.Conn, message []byte){
 	case "joinRoom":
 		hadnleJoinRoom(signalingData.RoomID, conn)
 	case "offer":
-		handleOffer(signalingData.RoomID, signalingData.Offer)
+		handleOffer(signalingData.RoomID, signalingData.SDP)
 	case "answer":
-		handleAnswer(signalingData.RoomID, signalingData.Answer)
+		handleAnswer(signalingData.RoomID, signalingData.SDP)
 	}
 }
 
 func handleCreateRoom(conn *websocket.Conn){
-	id, err := generateRandomID(10)
+	// generate ID
+	id, err := generateRandomID(20)
 	if err != nil {
 		log.Println("Failed to generate ID:", err)
 	}
+
+	// Add user to created room
 	peersRooms[id] = append(peersRooms[id], conn)
-	if err = conn.WriteMessage(websocket.TextMessage, []byte(id)); err != nil {
-		log.Println("Write error:", err)
-		return
-	}
+
+	handleResponse("createSucces", id, conn)
 }
 
 func hadnleJoinRoom(id string, conn *websocket.Conn){
+	// Add peer to existing room
 	peersRooms[id] = append(peersRooms[id], conn)
-	if err := conn.WriteMessage(websocket.TextMessage, []byte("Connected succesfully to room with ID: " + id)); err != nil {
-		log.Println("Write error:", err)
-		return
-	}
+
+	handleResponse("joinSucces", "Connected succesfully to room with ID: " + id, peersRooms[id][0])
 }
 
 func handleOffer(roomID, offer string){
-	target := peersRooms[roomID][1]
-	if err := target.WriteMessage(websocket.TextMessage, []byte(offer)); err != nil {
-		log.Println("Write error:", err)
-		return
-	}
+	log.Println(peersRooms)
+	room := peersRooms[roomID]
+	target := room[1]
+	
+	handleResponse("offer", offer, target)
 }
 
 func handleAnswer(roomID, answer string){
-	target := peersRooms[roomID][0]
-	if err := target.WriteMessage(websocket.TextMessage, []byte(answer)); err != nil {
+	room := peersRooms[roomID]
+	target := room[0]
+	
+	handleResponse("answer", answer, target)
+}
+
+func handleResponse(responseType, responsePayload string, conn *websocket.Conn){
+	// Generate response message
+	message := Message{
+		Type:	  responseType,
+		Payload:  responsePayload,
+	}
+	dataJSON, err := json.Marshal(message)
+	if err != nil {
+		log.Println("Error marshaling JSON:", err)
+		return
+	}
+
+	// Send response
+	if err = conn.WriteMessage(websocket.TextMessage, dataJSON); err != nil {
 		log.Println("Write error:", err)
 		return
 	}
 }
 
-func main(){
-	// Register the WebSocket handler
-	http.HandleFunc("/ws", handleWebScoket)
+// func appendData(data map[string][]*websocket.Conn, key string, value *websocket.Conn) {
+// 	// Check if the key exists
+// 	if _, ok := data[key]; !ok {
+// 		// Initialize an empty slice for the key
+// 		data[key] = make([]*websocket.Conn, 2)
+// 	}
 
-	// Start the signaling server
-	log.Println("Signaling server started on http://localhost:8080")
-	if err := http.ListenAndServe(":8080", nil); err != nil {
-		log.Fatal("ListenAndServe error:", err)
-	}
-}
+// 	// Append the value to the slice
+// 	data[key] = append(data[key], value)
+// }
