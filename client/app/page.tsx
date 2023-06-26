@@ -233,7 +233,7 @@ export default function Home() {
     
     setHistory((prev: any) => [...prev, 'You: ' + text]);
 
-    let encryptedString = encrypt(text);
+    let encryptedString = await encrypt(text);
     socket.send("msg: " + encryptedString);
     setMessage('');
     setChatStarted(true);
