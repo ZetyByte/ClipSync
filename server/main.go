@@ -2,6 +2,7 @@ package main
 
 import (
 	"net/http"
+	_ "net/http/pprof"
 	"sync"
 )
 
@@ -21,6 +22,11 @@ func main() {
 	flag := make(chan bool)
 
 	go server.process(flag)
+
+	// Register pprof handlers
+	go func() {
+		http.ListenAndServe(":6060", nil)
+	}()
 
 	http.HandleFunc("/ws", getHandlerFunc(&server, &mutex))
 

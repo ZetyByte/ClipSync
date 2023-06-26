@@ -22,6 +22,15 @@ const (
 
 	// Maximum message size allowed from peer.
 	maxMessageSize = 4096
+
+	// Time after which the client will be disconnected if it is not paired.
+	pairingTimeout = 60 * time.Second
+
+	// Time interval between checking if the client is paired.
+	checkingInterval = 1 * time.Second
+
+	// Time after which the client will be disconnected if it is idle.
+	idleTimeout = 5 * time.Minute
 )
 
 type Client struct {
@@ -35,7 +44,13 @@ type Client struct {
 
 	pair *Client
 
+	pairedFlag chan bool
+
 	mutex sync.Mutex
+
+	registeredTime time.Time
+
+	stopFlag chan bool
 }
 
 var upgrader = websocket.Upgrader{
@@ -46,7 +61,7 @@ var upgrader = websocket.Upgrader{
 func (c *Client) closeConnection() error {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
-
+	c.stopFlag <- true
 	var err error
 
 	if c.pair != nil {
@@ -67,10 +82,19 @@ func (c *Client) closeConnection() error {
 }
 
 // Writes data to websocket.
-func (c *Client) writeData() {
+func (c *Client) writeData(flag chan bool) {
+	loop := true
+	for loop {
+		select {
+		case <-c.pairedFlag:
+			loop = false
+		case <-flag:
+			return
+		}
+	}
 	for {
-		if c.pair != nil {
-			message := <-c.pair.sendMessage
+		select {
+		case message := <-c.pair.sendMessage:
 			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
 			err := c.conn.WriteMessage(websocket.TextMessage, []byte(message))
 			if err != nil {
@@ -78,18 +102,25 @@ func (c *Client) writeData() {
 				c.closeConnection()
 				return
 			}
+		case <-flag:
+			return
 		}
 	}
 }
 
-func (c *Client) sendPing() {
+func (c *Client) sendPing(stop chan bool) {
 	ticker := time.NewTicker(pingPeriod)
 	defer ticker.Stop()
 
-	for range ticker.C {
-		if err := c.conn.WriteControl(websocket.PingMessage, []byte("ping"), time.Now().Add(writeWait)); err != nil {
-			log.Println("Error sending ping:", err)
-			c.closeConnection()
+	for {
+		select {
+		case <-ticker.C:
+			if err := c.conn.WriteControl(websocket.PingMessage, []byte("ping"), time.Now().Add(writeWait)); err != nil {
+				log.Println("Error sending ping:", err)
+				c.closeConnection()
+				return
+			}
+		case <-stop:
 			return
 		}
 	}
@@ -103,6 +134,7 @@ func (c *Client) readData() {
 		return nil
 	})
 	for {
+		c.conn.SetReadDeadline(time.Now().Add(idleTimeout))
 		_, message, err := c.conn.ReadMessage()
 		if err != nil {
 			log.Println("Error reading message:", err)
@@ -110,6 +142,20 @@ func (c *Client) readData() {
 			return
 		}
 		c.sendMessage <- string(message)
+	}
+}
+
+func (c *Client) pairingDeadline(flag chan bool) {
+	for {
+		select {
+		case <-time.After(pairingTimeout):
+			c.closeConnection()
+			return
+		case <-flag:
+			return
+		default:
+		}
+		time.Sleep(checkingInterval)
 	}
 }
 
@@ -127,10 +173,13 @@ func handle(s *Server, w http.ResponseWriter, r *http.Request, m *sync.Mutex) {
 	}
 	conn.SetReadLimit(maxMessageSize)
 
+	stopFlag := make(chan bool)
 	client := Client{
 		server:      s,
 		conn:        conn,
 		sendMessage: make(chan string),
+		stopFlag:    stopFlag,
+		pairedFlag:  make(chan bool),
 	}
 
 	// Read ID from query.
@@ -159,8 +208,10 @@ func handle(s *Server, w http.ResponseWriter, r *http.Request, m *sync.Mutex) {
 		client.peerID = id
 		s.registerID <- &client
 	}
+	client.registeredTime = time.Now()
 
 	go client.readData()
-	go client.writeData()
-	go client.sendPing()
+	go client.writeData(stopFlag)
+	go client.pairingDeadline(stopFlag)
+	go client.sendPing(stopFlag)
 }
