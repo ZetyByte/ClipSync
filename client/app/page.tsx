@@ -32,7 +32,9 @@ export default function Home() {
   
   interface File {
     name: string,
-    file: string
+    file: string,
+    key: string,
+    iv: string
   }
 
   useEffect(() => {
@@ -101,16 +103,83 @@ export default function Home() {
       reader.readAsDataURL(file);
       reader.onload = async () => {
         var Base64 = reader.result as string;
-        console.log(Base64);
-            var encrypted = await encrypt(JSON.stringify({name: file.name, file: Base64}) as string) as string;
-            socket!.send("file: " + encrypted);
-      reader.onerror = (error) => {
-        console.log("error: ", error);
-      };
+        var key = await generateAESKey();
+        var encryptedFile = await encryptAES(Base64, key);
+        var encrypted = JSON.stringify({name: file.name, key: await encrypt(arrayBufferToString(await subtle.exportKey("raw", key))), iv: encryptedFile.iv, file: encryptedFile.encryptedData}) as string;
+        socket!.send("file: " + encrypted);
+        reader.onerror = (error) => {
+          console.log("error: ", error);
+        };
+      }
     }
-  }};
-  
+  };
 
+// Convert a string to an ArrayBuffer
+function stringToArrayBuffer(str: string) {
+  var encoder = new TextEncoder();
+  return encoder.encode(str);
+}
+
+// Convert an ArrayBuffer to a string
+function arrayBufferToString(buffer: ArrayBuffer) {
+  var decoder = new TextDecoder();
+  return decoder.decode(buffer);
+}
+
+// Generate a random AES key
+async function generateAESKey() {
+  return await crypto.subtle.generateKey(
+    {
+      name: "AES-CBC",
+      length: 256, // Key size in bits
+    },
+    true, // Extractable key
+    ["encrypt", "decrypt"]
+  );
+}
+
+// Encrypt data using AES
+async function encryptAES(data: string, key: CryptoKey) {
+  // Convert the data to an ArrayBuffer
+  const dataArrayBuffer = stringToArrayBuffer(data);
+
+  // Generate an initialization vector (IV)
+  const iv = crypto.getRandomValues(new Uint8Array(16));
+
+  // Encrypt the data with AES-CBC
+  const encryptedData = await crypto.subtle.encrypt(
+    {
+      name: "AES-CBC",
+      iv: iv,
+    },
+    key,
+    dataArrayBuffer
+  );
+
+  // Return the encrypted data and IV as an object
+  return {
+    encryptedData: encryptedData,
+    iv: iv,
+  };
+}
+
+async function decryptAES(encryptedData: BufferSource, iv : BufferSource , key: CryptoKey) {
+  // Decrypt the data with AES-CBC
+  const decryptedData = await crypto.subtle.decrypt(
+    {
+      name: "AES-CBC",
+      iv: iv,
+    },
+    key,
+    encryptedData
+  );
+
+  // Convert the decrypted data (ArrayBuffer) to a string
+  const decryptedString = arrayBufferToString(decryptedData);
+
+  return decryptedString;
+}
+  
   const encrypt = async (message: string) => {
     let publicKeyBuffer = await subtle.exportKey("spki", peerPublicKey!)
     let publicKey = Buffer.from(publicKeyBuffer).toString('base64');
@@ -211,11 +280,16 @@ export default function Home() {
         setPeerAccepted(true);
       } else if(event.data.slice(0,6) === 'file: '){
         let encrypted = event.data.slice(6);
-        let decryptedString = await decrypt(encrypted) as string;
-        let decrypted = JSON.parse(decryptedString) as File;
+        let json = JSON.parse(encrypted) as File;
+        const algorithm = {
+          name: 'AES-CBC',
+          length: 256
+        };
+        let file = await decryptAES(stringToArrayBuffer(encrypted.file), stringToArrayBuffer(encrypted.iv), await crypto.subtle.importKey('raw', stringToArrayBuffer(await decrypt(json.key) as string), algorithm, true, ['encrypt', 'decrypt'])
+        );
         const downloadLink = document.createElement('a');
-        downloadLink.href = decrypted.file;
-        downloadLink.download = decrypted.name;
+        downloadLink.href = file;
+        downloadLink.download = json.name;
 
         // Trigger the download
         downloadLink.click();
