@@ -6,55 +6,46 @@ import UrlID from './router';
 
 
 export default function Rtc() {
+    // Config for RTCPeerConnectiom
     const config = {
         iceServers: [{
             urls: "stun:stun.1.google.com:19302"
           }]
     }
+
+    // Create local peer and open data channel 
     const peer = new RTCPeerConnection(config);
     const dataChannel = peer.createDataChannel("chat", {
         negotiated: true,
         id: 0
     });
 
-    const [roomState, setroomState] = useState(false)
+    // 
+    const [status, setStatus] = useState('');
     const [id,setid] = useState('');
-    const [inputID, setinputID] = useState('');
-
 
     useEffect(() => {
         const ws = new WebSocket('ws://localhost:8080/ws');
         let id = UrlID();
 
         const sendData = data => {
-            ws.send(JSON.stringify(data))
+            // Send data to signaling server
+            ws.send(JSON.stringify(data));
         }
 
-        // function createRoom(){
-        //     ws.onopen = () => {
-        //         const data = JSON.parse('{"type": "createRoom", "id": ""}');
-        //         sendData(data);
-        //     };  
-        // }  
-
         async function createOffer(){
-            // button.disabled = true;
-            console.log('Create offer')
+            console.log('Create offer');
             await peer.setLocalDescription(await peer.createOffer());
             peer.onicecandidate = ({candidate}) => {
                 if (candidate) return;
-                const sdp = btoa(encodeURIComponent(peer.localDescription.sdp))
-                sendData(JSON.parse(`{"type": "offer", "id": "${id}", "sdp": "${sdp}"}`))
-                // setOffer(peer.localDescription.sdp)
-                console.log(peer.signalingState)
-                // offer.select();
-                // answer.placeholder = "Paste answer here. And Press Enter";
+                const sdp = btoa(encodeURIComponent(peer.localDescription.sdp));
+                sendData(JSON.parse(`{"type": "offer", "id": "${id}", "sdp": "${sdp}"}`));
+                console.log(peer.signalingState);
             }
         }
 
         async function handleOffer(offer) {
             if (peer.signalingState != "stable") return;
-            // button.disabled = offer.disabled = true;
             await peer.setRemoteDescription({
               type: "offer",
               sdp: offer
@@ -62,10 +53,8 @@ export default function Rtc() {
             await peer.setLocalDescription(await peer.createAnswer());
             peer.onicecandidate = ({candidate}) => {
                 if (candidate) return;
-                //answer.focus();
                 const sdp = btoa(encodeURIComponent(peer.localDescription.sdp));
                 sendData(JSON.parse(`{"type": "answer", "id": "${id}", "sdp": "${sdp}"}`));
-                //answer.select();
             };
         }
 
@@ -73,7 +62,6 @@ export default function Rtc() {
             console.log(peer.signalingState)
             console.log(peer)
             if (peer.signalingState != "have-local-offer") return;
-                // answer.disabled = true;
                 peer.setRemoteDescription({
                   type: "answer",
                   sdp: answer
@@ -82,6 +70,7 @@ export default function Rtc() {
         }
 
         ws.onopen = () => {
+            // Creating or joining room
             console.log('WebSocket connection established');
             console.log(id);
             setTimeout(() => {
@@ -92,7 +81,7 @@ export default function Rtc() {
                     const data = JSON.parse(`{"type": "joinRoom", "id": "${id}"}`);
                     sendData(data);
                 }
-            }, 1000)
+            }, 500)
             // You can send initial messages or perform other actions on connection open
         };
 
@@ -143,11 +132,8 @@ export default function Rtc() {
       
     function handleChange() {
         setStatus(`ConnectionState: ${peer.connectionState} IceConnectionState: ${peer.iceConnectionState}`);
-        // status.innerHTML = stat;
         console.log('%c' + new Date().toISOString() + ': ConnectionState: %c' + peer.connectionState + ' %cIceConnectionState: %c' + peer.iceConnectionState,
           'color:yellow', 'color:orange', 'color:yellow', 'color:orange');
-          console.log(peer.signalingState)
-
     }
     
 
@@ -158,20 +144,16 @@ export default function Rtc() {
             <div>
                 <a href={`http://localhost:3000/?id=${id}`} target="_blank">{id}</a>
             </div>
-
-            {/* <button id="button" onClick={handleCreateOffer}>Offer</button>
-            <textarea placeholder="Paste offer here. And press Enter" value={offer} onChange={handleOmessageChange}></textarea> 
-            <button onClick={handleOfferKeyPress}>Offer</button>
-            Answer: <textarea id="answer" value={answer} onChange={handleAmessageChange}></textarea> 
-            <button onClick={handleAnswerKeyPress}>Answer</button><br/> */}
-
-            Chat: <input id="chat" onKeyPress={(e) => {
+            
+            {/* Chat: <input id="chat" onKeyPress={(e) => {
                 if (e.key != 13) return;
                 dataChannel.send(chat.value);
                 log(chat.value);
                 chat.value = "";
                 }}/><br/>
-            <pre id="output">Chat: </pre>
+            <pre id="output">Chat: </pre> */}
+
+
         </>
     )
 }
