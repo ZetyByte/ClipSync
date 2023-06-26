@@ -4,7 +4,6 @@ import React, { useEffect, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { BiCopy } from 'react-icons/bi';
 import './style.css'
-import JSEncrypt from 'jsencrypt';
 
 const { subtle } = globalThis.crypto;
 
@@ -81,6 +80,7 @@ export default function Home() {
   const encrypt = async (message: string) => {
     let publicKeyBuffer = await subtle.exportKey("spki", peerPublicKey!)
     let publicKey = Buffer.from(publicKeyBuffer).toString('base64');
+    const JSEncrypt = (await import('jsencrypt')).default;
     const jsEncrypt = new JSEncrypt();
     jsEncrypt.setPublicKey(publicKey);
     return jsEncrypt.encrypt(message);
@@ -89,6 +89,7 @@ export default function Home() {
   const decrypt = async (message: string) => {
     let privateKeyBuffer = await subtle.exportKey("pkcs8", keyPair!.privateKey)
     let privateKey = Buffer.from(privateKeyBuffer).toString('base64');
+    const JSEncrypt = (await import('jsencrypt')).default;
     const jsEncrypt = new JSEncrypt();
     jsEncrypt.setPrivateKey(privateKey);
     return jsEncrypt.decrypt(message);
@@ -125,9 +126,12 @@ export default function Home() {
 
 
   const getUrl = () => {
-    const urlParams = new URLSearchParams(window.location.search);
-    const id = urlParams.get('id');
-    return serverUrl + (id ? `?id=${id}` : '');
+    if(typeof window !== undefined) {
+      const urlParams = new URLSearchParams(window.location.search);
+      const id = urlParams.get('id');
+      return serverUrl + (id ? `?id=${id}` : '');
+    }
+    return serverUrl;
   }
 
   const connectWebSocket = () => {
@@ -236,7 +240,7 @@ export default function Home() {
     
     setHistory((prev: any) => [...prev, 'You: ' + text]);
 
-    let encryptedString = encrypt(text);
+    let encryptedString = await encrypt(text);
     socket.send("msg: " + encryptedString);
     setMessage('');
     setChatStarted(true);
