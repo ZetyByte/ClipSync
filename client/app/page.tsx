@@ -5,7 +5,6 @@ import { QRCodeSVG } from 'qrcode.react';
 import { BiCopy } from 'react-icons/bi';
 import './style.css'
 import JSEncrypt from 'jsencrypt';
-//import * as brotli from 'iltorb';
 
 const { subtle } = globalThis.crypto;
 
@@ -28,8 +27,8 @@ export default function Home() {
   const [peerAccepted, setPeerAccepted] = useState(false);
   const [clientName, setClientName] = useState('');
   const [selectetdFile, setSelectedFile] = useState([]);
-  const [fileBase64String, setFileBase64String] = useState<string | ArrayBuffer | null>("");
-
+  const [fileBase64String, setFileBase64String] = useState("");
+  
   
 
   useEffect(() => {
@@ -76,9 +75,9 @@ export default function Home() {
   }
 
   const generatePeerName = () => {
-    let adjectives = ['Amazing', 'Awesome', 'Beautiful', 'Brave', 'Bright', 'Calm', 'Clever', 'Cool', 'Cute', 'Dazzling', 'Elegant', 'Enchanting', 'Fabulous', 'Fantastic', 'Friendly', 'Funny', 'Gentle', 'Glamorous', 'Gorgeous', 'Graceful', 'Handsome', 'Happy', 'Healthy', 'Helpful', 'Hilarious', 'Humorous', 'Jolly', 'Joyous', 'Kind', 'Lively', 'Lovely', 'Lucky', 'Magnificent', 'Nice', 'Perfect', 'Pleasant', 'Proud', 'Silly', 'Smiling', 'Splendid', 'Successful', 'Thoughtful', 'Victorious', 'Vivacious', 'Witty', 'Wonderful'];
+    let adjectives = ['Amazing', 'Awesome', 'Beautiful', 'Brave', 'Bright', 'Calm', 'Clever', 'Cool', 'Cute', 'Dazzling', 'Elegant', 'Enchanting', 'Fabulous', 'Fantastic', 'Friendly', 'Funny', 'Gentle', 'Glamorous', 'Gorgeous', 'Graceful', 'Handsome', 'Happy', 'Healthy', 'Helpful', 'Hilarious', 'Humorous', 'Jolly', 'Joyous', 'Kind', 'Lively', 'Lovely', 'Lucky', 'Magnificent', 'Nice', 'Perfect', 'Pleasant', 'Proud', 'Silly', 'Smiling', 'Splendid', 'Successful', 'Thoughtful', 'Victorious', 'Vivacious', 'Witty', 'Wonderful','Adventurous', 'Blissful', 'Charming', 'Delightful', 'Exquisite', 'Fierce', 'Glowing', 'Harmonious', 'Incredible', 'Jubilant'];
 
-    let nouns = ['Apple', 'Banana', 'Bread', 'Butter', 'Cake', 'Carrot', 'Cheese', 'Chicken', 'Chocolate', 'Cookie', 'Cucumber', 'Egg', 'Fish', 'Garlic', 'Grape', 'Honey', 'Ice cream', 'Juice', 'Lemon', 'Lime', 'Mango', 'Milk', 'Mushroom', 'Noodles', 'Olive', 'Onion', 'Orange', 'Pasta', 'Peach', 'Pear', 'Pepper', 'Pineapple', 'Pizza', 'Potato', 'Pumpkin', 'Rice', 'Salad', 'Sandwich', 'Sausage', 'Soup', 'Steak', 'Strawberry', 'Tomato', 'Watermelon'];
+    let nouns = ['Apple', 'Banana', 'Bread', 'Butter', 'Cake', 'Carrot', 'Cheese', 'Chicken', 'Chocolate', 'Cookie', 'Cucumber', 'Egg', 'Fish', 'Garlic', 'Grape', 'Honey', 'Ice cream', 'Juice', 'Lemon', 'Lime', 'Mango', 'Milk', 'Mushroom', 'Noodles', 'Olive', 'Onion', 'Orange', 'Pasta', 'Peach', 'Pear', 'Pepper', 'Pineapple', 'Pizza', 'Potato', 'Pumpkin', 'Rice', 'Salad', 'Sandwich', 'Sausage', 'Soup', 'Steak', 'Strawberry', 'Tomato', 'Watermelon' ,'Quinoa', 'Raspberry', 'Sunflower', 'Tea', 'Vanilla', 'Walnut', 'Yogurt', 'Zucchini'];
     
     return adjectives[Math.floor(Math.random() * adjectives.length) + 1] + ' ' + nouns[Math.floor(Math.random() * nouns.length) + 1 ];
   }
@@ -92,21 +91,37 @@ export default function Home() {
     console.log(e.target.files[0].type);
   };
 
-  const sendFile = (file : any) => {
+  const sendFile = async (file : any) => {
     var reader = new FileReader();
     if (file) {
       reader.readAsDataURL(file);
-      reader.onload = () => {
-        var Base64 = reader.result;
+      reader.onload = async () => {
+        var Base64 = reader.result as string;
         console.log(Base64);
-        setFileBase64String(Base64);
-      };
+            var encrypted = await encrypt(Base64);
+            socket!.send("file: " + encrypted);
       reader.onerror = (error) => {
         console.log("error: ", error);
       };
     }
+  }};
+  
+  const decodeFileBase64 = (base64String : any) => {
+    
+    return decodeURIComponent(
+      atob(base64String)
+        .split("")
+        .map(function (c) {
+          return "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2);
+        })
+        .join("")
+    );
   };
 
+  const decodeBase64 = decodeFileBase64(
+    fileBase64String.substring(fileBase64String.indexOf(",") + 1)
+  );
+  
 
   const encrypt = async (message: string) => {
     let publicKeyBuffer = await subtle.exportKey("spki", peerPublicKey!)
@@ -204,9 +219,22 @@ export default function Home() {
         let decryptedString = await decrypt(encrypted);
         setHistory((prev: any) => [...prev, 'Peer: ' + decryptedString]);
         setChatStarted(true);
-      }
-      else if(event.data === 'accept-pairing'){
+      } else if(event.data === 'accept-pairing'){
         setPeerAccepted(true);
+      } else if(event.data.slice(0,6) === 'file: '){
+        let encrypted = event.data.slice(6);
+        let decryptedString = await decrypt(encrypted) as string;
+        let decoded = decodeFileBase64(decryptedString);
+        setHistory((prev: any) => [...prev, 'Peer: ' + "file"]);
+        const blob = new Blob([decoded]);
+
+        // Create a download link
+        const downloadLink = document.createElement('a');
+        downloadLink.href = URL.createObjectURL(blob);
+        downloadLink.download = "filename.c";
+
+        // Trigger the download
+        downloadLink.click();
       }
       else{
         console.log('Received unknown message: ', event.data);
@@ -272,6 +300,10 @@ export default function Home() {
 
   const handleSendMessage = async () => {
     await sendMessage(message);
+  };
+
+  const handleSendFile = async () => {
+    await sendFile(selectetdFile);
   };
 
 
@@ -392,6 +424,7 @@ export default function Home() {
                 <button className="btn clearMsg" onClick={clearMessages}>Clear Messages (Locally)</button>  
                 <button className="btn past-clipbrd" onClick={handlePaste}>Paste clipboard</button>
                 <button className='btn' onClick={() => disconnectButton()}>Disconnect</button>
+                <button className='btn' onClick={handleSendFile}>Send File</button>
                 <input type="file" id="input" onChange={onFileChange} />
             </div>            
         </div>}
