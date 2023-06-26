@@ -23,9 +23,6 @@ const (
 	// Maximum message size allowed from peer.
 	maxMessageSize = 4096
 
-	// Time after which the client will be disconnected if it is not paired.
-	pairingTimeout = 60 * time.Second
-
 	// Time interval between checking if the client is paired.
 	checkingInterval = 1 * time.Second
 
@@ -47,8 +44,6 @@ type Client struct {
 	pairedFlag chan bool
 
 	mutex sync.Mutex
-
-	registeredTime time.Time
 
 	stopFlag chan bool
 }
@@ -145,20 +140,6 @@ func (c *Client) readData() {
 	}
 }
 
-func (c *Client) pairingDeadline(flag chan bool) {
-	for {
-		select {
-		case <-time.After(pairingTimeout):
-			c.closeConnection()
-			return
-		case <-flag:
-			return
-		default:
-		}
-		time.Sleep(checkingInterval)
-	}
-}
-
 // Handle creates a new client and lets the server process it.
 func handle(s *Server, w http.ResponseWriter, r *http.Request, m *sync.Mutex) {
 	log.Println("New client connected")
@@ -208,10 +189,8 @@ func handle(s *Server, w http.ResponseWriter, r *http.Request, m *sync.Mutex) {
 		client.peerID = id
 		s.registerID <- &client
 	}
-	client.registeredTime = time.Now()
 
 	go client.readData()
 	go client.writeData(stopFlag)
-	go client.pairingDeadline(stopFlag)
 	go client.sendPing(stopFlag)
 }
