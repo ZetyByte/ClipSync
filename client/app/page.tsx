@@ -5,7 +5,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import { BiCopy } from 'react-icons/bi';
 import './style.css'
 import JSEncrypt from 'jsencrypt';
-import { Content } from 'next/font/google';
+import JSON from 'json3';
 
 const { subtle } = globalThis.crypto;
 
@@ -30,7 +30,10 @@ export default function Home() {
   const [selectetdFile, setSelectedFile] = useState([]);
   const [fileBase64String, setFileBase64String] = useState("");
   
-  
+  interface File {
+    name: string,
+    file: string
+  }
 
   useEffect(() => {
     if (keyPair)
@@ -99,51 +102,13 @@ export default function Home() {
       reader.onload = async () => {
         var Base64 = reader.result as string;
         console.log(Base64);
-            var encrypted = await encrypt(Base64) as string;
+            var encrypted = await encrypt(JSON.stringify({name: file.name, file: Base64}) as string) as string;
             socket!.send("file: " + encrypted);
       reader.onerror = (error) => {
         console.log("error: ", error);
       };
     }
   }};
-  
-
-  const b64toBlob = (b64Data : string, contentType='text/plain', sliceSize=512) => {
-    const byteCharacters = btoa(atob(b64Data));
-    const byteArrays = [];
-  
-    for (let offset = 0; offset < byteCharacters.length; offset += sliceSize) {
-      const slice = byteCharacters.slice(offset, offset + sliceSize);
-  
-      const byteNumbers = new Array(slice.length);
-      for (let i = 0; i < slice.length; i++) {
-        byteNumbers[i] = slice.charCodeAt(i);
-      }
-  
-      const byteArray = new Uint8Array(byteNumbers);
-      byteArrays.push(byteArray);
-    }
-  
-    const blob = new Blob(byteArrays, {type: contentType});
-    return blob;
-  }
-
-
-//   const decodeFileBase64 = (base64String : any) => {
-    
-//     return decodeURIComponent(
-//       atob(base64String)
-//         .split("")
-//         .map(function (c) {
-//           return "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2);
-//         })
-//         .join("")
-//     );
-//   };
-
-//   const decodeBase64 = decodeFileBase64(
-//     fileBase64String.substring(fileBase64String.indexOf(",") + 1)
-//   );
   
 
   const encrypt = async (message: string) => {
@@ -247,9 +212,10 @@ export default function Home() {
       } else if(event.data.slice(0,6) === 'file: '){
         let encrypted = event.data.slice(6);
         let decryptedString = await decrypt(encrypted) as string;
+        let decrypted = JSON.parse(decryptedString) as File;
         const downloadLink = document.createElement('a');
-        downloadLink.href = decryptedString;
-        downloadLink.download = "filename.txt";
+        downloadLink.href = decrypted.file;
+        downloadLink.download = decrypted.name;
 
         // Trigger the download
         downloadLink.click();

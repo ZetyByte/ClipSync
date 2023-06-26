@@ -17,6 +17,7 @@
     "eslint": "8.42.0",
     "eslint-config-next": "13.4.4",
     "jsencrypt": "^3.3.2",
+    "json3": "^3.3.3",
     "next": "13.4.4",
     "next.js": "^1.0.3",
     "postcss": "8.4.24",
@@ -32,6 +33,7 @@
   "devDependencies": {
     "@testing-library/jest-dom": "^5.16.5",
     "@testing-library/react": "^14.0.0",
+    "@types/json3": "^3.3.2",
     "@types/request-ip": "^0.0.38",
     "@types/ws": "^8.5.5",
     "bufferutil": "^4.0.7",
