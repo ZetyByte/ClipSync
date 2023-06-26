@@ -5,6 +5,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import { BiCopy } from 'react-icons/bi';
 import './style.css'
 import JSEncrypt from 'jsencrypt';
+//import * as brotli from 'iltorb';
 
 const { subtle } = globalThis.crypto;
 
@@ -26,6 +27,10 @@ export default function Home() {
   const [pairingAccepted, setPairingAccepted] = useState(false);
   const [peerAccepted, setPeerAccepted] = useState(false);
   const [clientName, setClientName] = useState('');
+  const [selectetdFile, setSelectedFile] = useState([]);
+  const [fileBase64String, setFileBase64String] = useState<string | ArrayBuffer | null>("");
+
+  
 
   useEffect(() => {
     if (keyPair)
@@ -77,6 +82,31 @@ export default function Home() {
     
     return adjectives[Math.floor(Math.random() * adjectives.length) + 1] + ' ' + nouns[Math.floor(Math.random() * nouns.length) + 1 ];
   }
+
+
+  const onFileChange = (e: any) => {
+    setSelectedFile(e.target.files);
+    console.log(e.target.files[0]);
+    console.log(e.target.files[0].name);
+    console.log(e.target.files[0].size);
+    console.log(e.target.files[0].type);
+  };
+
+  const sendFile = (file : any) => {
+    var reader = new FileReader();
+    if (file) {
+      reader.readAsDataURL(file);
+      reader.onload = () => {
+        var Base64 = reader.result;
+        console.log(Base64);
+        setFileBase64String(Base64);
+      };
+      reader.onerror = (error) => {
+        console.log("error: ", error);
+      };
+    }
+  };
+
 
   const encrypt = async (message: string) => {
     let publicKeyBuffer = await subtle.exportKey("spki", peerPublicKey!)
@@ -362,6 +392,7 @@ export default function Home() {
                 <button className="btn clearMsg" onClick={clearMessages}>Clear Messages (Locally)</button>  
                 <button className="btn past-clipbrd" onClick={handlePaste}>Paste clipboard</button>
                 <button className='btn' onClick={() => disconnectButton()}>Disconnect</button>
+                <input type="file" id="input" onChange={onFileChange} />
             </div>            
         </div>}
     </div>

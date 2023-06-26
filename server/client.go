@@ -23,9 +23,6 @@ const (
 	// Maximum message size allowed from peer.
 	maxMessageSize = 4096
 
-	// Time interval between checking if the client is paired.
-	checkingInterval = 1 * time.Second
-
 	// Time after which the client will be disconnected if it is idle.
 	idleTimeout = 5 * time.Minute
 )
