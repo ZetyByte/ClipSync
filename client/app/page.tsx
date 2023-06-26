@@ -99,7 +99,7 @@ export default function Home() {
       reader.onload = async () => {
         var Base64 = reader.result as string;
         console.log(Base64);
-            var encrypted = await encrypt(Base64);
+            var encrypted = await encrypt(Base64) as string;
             socket!.send("file: " + encrypted);
       reader.onerror = (error) => {
         console.log("error: ", error);
@@ -108,8 +108,8 @@ export default function Home() {
   }};
   
 
-  const b64toBlob = (b64Data : any, contentType='text/plain', sliceSize=512) => {
-    const byteCharacters = atob(b64Data);
+  const b64toBlob = (b64Data : string, contentType='text/plain', sliceSize=512) => {
+    const byteCharacters = btoa(atob(b64Data));
     const byteArrays = [];
   
     for (let offset = 0; offset < byteCharacters.length; offset += sliceSize) {
@@ -247,14 +247,9 @@ export default function Home() {
       } else if(event.data.slice(0,6) === 'file: '){
         let encrypted = event.data.slice(6);
         let decryptedString = await decrypt(encrypted) as string;
-        let decoded = b64toBlob(decryptedString );
-        setHistory((prev: any) => [...prev, 'Peer: ' + "file"]);
-        const blob = new Blob([decoded]);
-
-        // Create a download link
         const downloadLink = document.createElement('a');
-        downloadLink.href = URL.createObjectURL(blob);
-        downloadLink.download = "filename.c";
+        downloadLink.href = decryptedString;
+        downloadLink.download = "filename.txt";
 
         // Trigger the download
         downloadLink.click();
