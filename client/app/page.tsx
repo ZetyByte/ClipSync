@@ -105,7 +105,11 @@ export default function Home() {
         var Base64 = reader.result as string;
         var key = await generateAESKey();
         var encryptedFile = await encryptAES(Base64, key);
-        var encrypted = JSON.stringify({name: file.name, key: await encrypt(arrayBufferToString(await subtle.exportKey("raw", key))), iv: encryptedFile.iv, file: encryptedFile.encryptedData}) as string;
+        let exportedKey = arrayBufferToString(await crypto.subtle.exportKey("raw", key));
+        console.log("key " + exportedKey);
+        console.log("key length " + (await crypto.subtle.exportKey("raw", key)).byteLength);
+        console.log("key lenght 2" + stringToArrayBuffer(exportedKey).byteLength);
+        var encrypted = JSON.stringify({name: file.name, key: await encrypt(exportedKey), iv: encryptedFile.iv, file: encryptedFile.encryptedData}) as string;
         socket!.send("file: " + encrypted);
         reader.onerror = (error) => {
           console.log("error: ", error);
@@ -114,17 +118,20 @@ export default function Home() {
     }
   };
 
-// Convert a string to an ArrayBuffer
-function stringToArrayBuffer(str: string) {
-  var encoder = new TextEncoder();
-  return encoder.encode(str);
+function arrayBufferToString(buffer: ArrayBuffer): string {
+  return String.fromCharCode.apply(null, Array.from(new Uint16Array(buffer)));
 }
 
-// Convert an ArrayBuffer to a string
-function arrayBufferToString(buffer: ArrayBuffer) {
-  var decoder = new TextDecoder();
-  return decoder.decode(buffer);
+// String to ArrayBuffer conversion
+function stringToArrayBuffer(str: string): ArrayBuffer {
+  var buf = new ArrayBuffer(str.length*2); // 2 bytes for each char
+  var bufView = new Uint16Array(buf);
+  for (var i=0, strLen=str.length; i<strLen; i++) {
+    bufView[i] = str.charCodeAt(i);
+  }
+  return buf;
 }
+  
 
 // Generate a random AES key
 async function generateAESKey() {
@@ -285,8 +292,12 @@ async function decryptAES(encryptedData: BufferSource, iv : BufferSource , key: 
           name: 'AES-CBC',
           length: 256
         };
-        let file = await decryptAES(stringToArrayBuffer(encrypted.file), stringToArrayBuffer(encrypted.iv), await crypto.subtle.importKey('raw', stringToArrayBuffer(await decrypt(json.key) as string), algorithm, true, ['encrypt', 'decrypt'])
-        );
+        let decryptedKey = await decrypt(json.key) as string;
+        console.log('Decrypted key: ', decryptedKey);
+        console.log('Decrypted key length: ', stringToArrayBuffer(decryptedKey).byteLength);
+        let key = await crypto.subtle.importKey('raw', stringToArrayBuffer(decryptedKey), algorithm, true, ['encrypt', 'decrypt']);
+        let file = await decryptAES(stringToArrayBuffer(encrypted.file), stringToArrayBuffer(encrypted.iv), key);
+        
         const downloadLink = document.createElement('a');
         downloadLink.href = file;
         downloadLink.download = json.name;
