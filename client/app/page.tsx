@@ -6,6 +6,7 @@ import { BiCopy } from 'react-icons/bi';
 import './style.css'
 import JSEncrypt from 'jsencrypt';
 import JSON from 'json3';
+import pako from 'pako';
 
 const { subtle } = globalThis.crypto;
 
@@ -28,7 +29,7 @@ export default function Home() {
   const [peerAccepted, setPeerAccepted] = useState(false);
   const [clientName, setClientName] = useState('');
   const [selectetdFile, setSelectedFile] = useState([]);
-  const [fileBase64String, setFileBase64String] = useState("");
+  var receivedChunks: string = "";
   
   interface File {
     name: string,
@@ -85,7 +86,7 @@ export default function Home() {
 
     let nouns = ['Apple', 'Banana', 'Bread', 'Butter', 'Cake', 'Carrot', 'Cheese', 'Chicken', 'Chocolate', 'Cookie', 'Cucumber', 'Egg', 'Fish', 'Garlic', 'Grape', 'Honey', 'Ice cream', 'Juice', 'Lemon', 'Lime', 'Mango', 'Milk', 'Mushroom', 'Noodles', 'Olive', 'Onion', 'Orange', 'Pasta', 'Peach', 'Pear', 'Pepper', 'Pineapple', 'Pizza', 'Potato', 'Pumpkin', 'Rice', 'Salad', 'Sandwich', 'Sausage', 'Soup', 'Steak', 'Strawberry', 'Tomato', 'Watermelon' ,'Quinoa', 'Raspberry', 'Sunflower', 'Tea', 'Vanilla', 'Walnut', 'Yogurt', 'Zucchini'];
     
-    return adjectives[Math.floor(Math.random() * adjectives.length) + 1] + ' ' + nouns[Math.floor(Math.random() * nouns.length) + 1 ];
+    return adjectives[Math.floor(Math.random() * adjectives.length)] + ' ' + nouns[Math.floor(Math.random() * nouns.length)];
   }
 
 
@@ -97,39 +98,81 @@ export default function Home() {
     console.log(e.target.files[0].type);
   };
 
-  const sendFile = async (file : any) => {
-    var reader = new FileReader();
+  const sendFile = async (file: any) => {
+    const CHUNK_SIZE = 5 * 1024 * 1024; // 5 MB
+    const reader = new FileReader();
+  
     if (file) {
-      reader.readAsDataURL(file);
       reader.onload = async () => {
-        var Base64 = reader.result as string;
-        var key = await generateAESKey();
-        var encryptedFile = await encryptAES(Base64, key);
-        let exportedKey = arrayBufferToString(await crypto.subtle.exportKey("raw", key));
-        console.log("key " + exportedKey);
-        console.log("key length " + (await crypto.subtle.exportKey("raw", key)).byteLength);
-        console.log("key lenght 2" + stringToArrayBuffer(exportedKey).byteLength);
-        var encrypted = JSON.stringify({name: file.name, key: await encrypt(exportedKey), iv: encryptedFile.iv, file: encryptedFile.encryptedData}) as string;
-        socket!.send("file: " + encrypted);
-        reader.onerror = (error) => {
-          console.log("error: ", error);
-        };
-      }
+        const base64Data = reader.result! as string;
+        console.log("Original file: ", base64Data.length);
+        let start = new Date;
+        const compressedData = pako.deflate(base64Data);
+        let end = new Date;
+        console.log("Compression time: ", (end.getTime() - start.getTime())/1000);
+        console.log("Compressed file: ", compressedData.length);
+  
+        const totalChunks = Math.ceil(compressedData.length / CHUNK_SIZE);
+        let totalSize = 0;
+        for (let i = 0; i < totalChunks; i++) {
+          let sendStart = new Date;
+          const start = i * CHUNK_SIZE;
+          const end = Math.min(start + CHUNK_SIZE, compressedData.length);
+          const chunk = compressedData.slice(start, end);
+          totalSize += chunk.length;
+          console.log("Chunk size ", i, ": ", chunk.length);
+  
+          const key = await generateAESKey();
+          let startEncr = new Date;
+          const encryptedChunk = await encryptAES(arrayBufferToString(chunk.buffer), key);
+          let endEncr = new Date;
+          console.log("Encryption time", i, ": ", (endEncr.getTime() - startEncr.getTime())/1000);
+          const exportedKey = await crypto.subtle.exportKey("raw", key);
+          const stringKey = arrayBufferToString(exportedKey);
+  
+          const encryptedData = JSON.stringify({
+            name: file.name,
+            key: await encrypt(stringKey),
+            iv: arrayBufferToString(encryptedChunk.iv.buffer),
+            chunk: arrayBufferToString(encryptedChunk.encryptedData),
+            totalChunks: totalChunks,
+            currentChunk: i + 1,
+          });
+  
+          socket!.send("file: " + encryptedData);
+          let sendEnd = new Date;
+          console.log("Send time", i, ": ", (sendEnd.getTime() - sendStart.getTime())/1000);
+        }
+        console.log("Total size: ", totalSize);
+      };
+  
+      reader.readAsDataURL(file);
+      reader.onerror = (error) => {
+        console.log("error: ", error);
+      };
     }
   };
+  
 
 function arrayBufferToString(buffer: ArrayBuffer): string {
-  return String.fromCharCode.apply(null, Array.from(new Uint16Array(buffer)));
+  const view = new Uint8Array(buffer);
+
+  let asciiString = '';
+  for (let i = 0; i < view.length; i++) {
+    const asciiChar = String.fromCharCode(view[i]);
+    asciiString += asciiChar;
+  }
+  return asciiString;
 }
 
-// String to ArrayBuffer conversion
 function stringToArrayBuffer(str: string): ArrayBuffer {
-  var buf = new ArrayBuffer(str.length*2); // 2 bytes for each char
-  var bufView = new Uint16Array(buf);
-  for (var i=0, strLen=str.length; i<strLen; i++) {
-    bufView[i] = str.charCodeAt(i);
+  const view = new Uint8Array(str.length);
+
+  for (let i = 0; i < str.length; i++) {
+    view[i] = str.charCodeAt(i);
   }
-  return buf;
+  
+  return view.buffer;
 }
   
 
@@ -146,7 +189,7 @@ async function generateAESKey() {
 }
 
 // Encrypt data using AES
-async function encryptAES(data: string, key: CryptoKey) {
+async function encryptAES(data: string, key: CryptoKey): Promise<{ encryptedData: ArrayBuffer, iv: Uint8Array }>  {
   // Convert the data to an ArrayBuffer
   const dataArrayBuffer = stringToArrayBuffer(data);
 
@@ -252,7 +295,6 @@ async function decryptAES(encryptedData: BufferSource, iv : BufferSource , key: 
 
     // Listen for messages
     socket.addEventListener('message', async (event) => {
-      console.log('Received message: ', event.data);
       if (event.data === 'ping') {
         socket.send('pong');
 
@@ -287,23 +329,7 @@ async function decryptAES(encryptedData: BufferSource, iv : BufferSource , key: 
         setPeerAccepted(true);
       } else if(event.data.slice(0,6) === 'file: '){
         let encrypted = event.data.slice(6);
-        let json = JSON.parse(encrypted) as File;
-        const algorithm = {
-          name: 'AES-CBC',
-          length: 256
-        };
-        let decryptedKey = await decrypt(json.key) as string;
-        console.log('Decrypted key: ', decryptedKey);
-        console.log('Decrypted key length: ', stringToArrayBuffer(decryptedKey).byteLength);
-        let key = await crypto.subtle.importKey('raw', stringToArrayBuffer(decryptedKey), algorithm, true, ['encrypt', 'decrypt']);
-        let file = await decryptAES(stringToArrayBuffer(encrypted.file), stringToArrayBuffer(encrypted.iv), key);
-        
-        const downloadLink = document.createElement('a');
-        downloadLink.href = file;
-        downloadLink.download = json.name;
-
-        // Trigger the download
-        downloadLink.click();
+        receiveFileByChunks(encrypted);
       }
       else{
         console.log('Received unknown message: ', event.data);
@@ -335,6 +361,41 @@ async function decryptAES(encryptedData: BufferSource, iv : BufferSource , key: 
       socket!.send("client-info: " + encryptedString);
       console.log('Sent client info: ', encryptedString);
     }
+
+
+    const receiveFileByChunks = async (encrypted: string) => {
+      const json = JSON.parse(encrypted);
+      const algorithm = {
+        name: 'AES-CBC',
+        length: 256
+      };
+    
+      const decryptedKey = await decrypt(json.key) as string;
+      console.log("1");
+      const key = await crypto.subtle.importKey('raw', stringToArrayBuffer(decryptedKey), algorithm, true, ['encrypt', 'decrypt']);
+      console.log("2");
+      const decryptedChunk = await decryptAES(stringToArrayBuffer(json.chunk), stringToArrayBuffer(json.iv), key);
+      console.log("3");
+      // Append the received chunk to the file
+      receivedChunks += decryptedChunk;
+      console.log(decryptedChunk.length);
+      // Check if all chunks have been received
+      if (json.currentChunk === json.totalChunks) {
+        console.log("Total size: " + receivedChunks.length)
+        const decompressedChunk = pako.inflate(stringToArrayBuffer(receivedChunks));
+        console.log("4");
+    
+        const downloadLink = document.createElement('a');
+        downloadLink.href = arrayBufferToString(decompressedChunk);
+        downloadLink.download = json.name;
+    
+        // Trigger the download
+        downloadLink.click();
+    
+        // Clear the received chunks
+        receivedChunks = "";
+      }
+    };
 
 
     const acceptPairing = async () => {
