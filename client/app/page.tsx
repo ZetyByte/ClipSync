@@ -29,14 +29,7 @@ export default function Home() {
   const [peerAccepted, setPeerAccepted] = useState(false);
   const [clientName, setClientName] = useState('');
   const [selectetdFile, setSelectedFile] = useState([]);
-  var receivedChunks: string = "";
-  
-  interface File {
-    name: string,
-    file: string,
-    key: string,
-    iv: string
-  }
+  var receivedChunks: ArrayBuffer = new ArrayBuffer(0);
 
   useEffect(() => {
     if (keyPair)
@@ -124,7 +117,7 @@ export default function Home() {
   
           const key = await generateAESKey();
           let startEncr = new Date;
-          const encryptedChunk = await encryptAES(arrayBufferToString(chunk.buffer), key);
+          const encryptedChunk = await encryptAES(chunk.buffer, key);
           let endEncr = new Date;
           console.log("Encryption time", i, ": ", (endEncr.getTime() - startEncr.getTime())/1000);
           const exportedKey = await crypto.subtle.exportKey("raw", key);
@@ -189,10 +182,7 @@ async function generateAESKey() {
 }
 
 // Encrypt data using AES
-async function encryptAES(data: string, key: CryptoKey): Promise<{ encryptedData: ArrayBuffer, iv: Uint8Array }>  {
-  // Convert the data to an ArrayBuffer
-  const dataArrayBuffer = stringToArrayBuffer(data);
-
+async function encryptAES(data: ArrayBuffer, key: CryptoKey): Promise<{ encryptedData: ArrayBuffer, iv: Uint8Array }>  {
   // Generate an initialization vector (IV)
   const iv = crypto.getRandomValues(new Uint8Array(16));
 
@@ -203,7 +193,7 @@ async function encryptAES(data: string, key: CryptoKey): Promise<{ encryptedData
       iv: iv,
     },
     key,
-    dataArrayBuffer
+    data
   );
 
   // Return the encrypted data and IV as an object
@@ -213,7 +203,7 @@ async function encryptAES(data: string, key: CryptoKey): Promise<{ encryptedData
   };
 }
 
-async function decryptAES(encryptedData: BufferSource, iv : BufferSource , key: CryptoKey) {
+async function decryptAES(encryptedData: BufferSource, iv : BufferSource , key: CryptoKey): Promise<ArrayBuffer> {
   // Decrypt the data with AES-CBC
   const decryptedData = await crypto.subtle.decrypt(
     {
@@ -224,10 +214,7 @@ async function decryptAES(encryptedData: BufferSource, iv : BufferSource , key: 
     encryptedData
   );
 
-  // Convert the decrypted data (ArrayBuffer) to a string
-  const decryptedString = arrayBufferToString(decryptedData);
-
-  return decryptedString;
+  return decryptedData;
 }
   
   const encrypt = async (message: string) => {
@@ -369,7 +356,6 @@ async function decryptAES(encryptedData: BufferSource, iv : BufferSource , key: 
         name: 'AES-CBC',
         length: 256
       };
-    
       const decryptedKey = await decrypt(json.key) as string;
       console.log("1");
       const key = await crypto.subtle.importKey('raw', stringToArrayBuffer(decryptedKey), algorithm, true, ['encrypt', 'decrypt']);
@@ -377,12 +363,14 @@ async function decryptAES(encryptedData: BufferSource, iv : BufferSource , key: 
       const decryptedChunk = await decryptAES(stringToArrayBuffer(json.chunk), stringToArrayBuffer(json.iv), key);
       console.log("3");
       // Append the received chunk to the file
-      receivedChunks += decryptedChunk;
-      console.log(decryptedChunk.length);
+      let combinedLength = receivedChunks.byteLength + decryptedChunk.byteLength;
+      let combinedArray = new Uint8Array(combinedLength);
+      combinedArray.set(new Uint8Array(receivedChunks), 0);
+      combinedArray.set(new Uint8Array(decryptedChunk), receivedChunks.byteLength);
+      receivedChunks = combinedArray.buffer;
       // Check if all chunks have been received
       if (json.currentChunk === json.totalChunks) {
-        console.log("Total size: " + receivedChunks.length)
-        const decompressedChunk = pako.inflate(stringToArrayBuffer(receivedChunks));
+        const decompressedChunk = pako.inflate(receivedChunks);
         console.log("4");
     
         const downloadLink = document.createElement('a');
@@ -393,7 +381,7 @@ async function decryptAES(encryptedData: BufferSource, iv : BufferSource , key: 
         downloadLink.click();
     
         // Clear the received chunks
-        receivedChunks = "";
+        receivedChunks = new ArrayBuffer(0);
       }
     };
 
