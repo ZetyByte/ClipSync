@@ -2,7 +2,6 @@ package main
 
 import (
 	"log"
-	"time"
 
 	"github.com/gorilla/websocket"
 )
@@ -20,8 +19,10 @@ func (s *Server) process(flag chan bool) {
 		case client := <-s.registerID:
 			peer, ok := s.clients[client.peerID]
 			if ok {
-				log.Println("Pairing clients")
+				log.Println("Paired clients")
 				pairClients(client, peer)
+
+				go client.handleTimeout()
 
 				// Send message to both clients that they are connected to change the state of the pages.
 				sendConnectedMessage(client.conn)
@@ -30,7 +31,7 @@ func (s *Server) process(flag chan bool) {
 				// Delete paired client from the queue.
 				delete(s.clients, client.peerID)
 			} else {
-				handleInvalidID(client)
+				client.closeConnection(websocket.CloseInternalServerErr, "Client with this ID does not exist")
 			}
 		case <-flag:
 			close(s.registerID)
@@ -42,13 +43,11 @@ func (s *Server) process(flag chan bool) {
 func pairClients(client1, client2 *Client) {
 	client1.pair = client2
 	client2.pair = client1
+
+	client1.resetIdleTimer()
+	client2.resetIdleTimer()
 }
 
 func sendConnectedMessage(conn *websocket.Conn) {
 	conn.WriteMessage(websocket.TextMessage, []byte("connected"))
-}
-
-func handleInvalidID(client *Client) {
-	client.conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseInternalServerErr, "Client with this ID does not exist"), time.Now().Add(time.Second*5))
-	client.conn.Close()
 }
