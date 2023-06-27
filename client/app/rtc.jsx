@@ -27,6 +27,7 @@ export default function Rtc() {
     useEffect(() => {
         const ws = new WebSocket('ws://localhost:8080/ws');
         let id = UrlID();
+        if (id === null) id = '';
 
         const sendData = data => {
             // Send data to signaling server
@@ -144,7 +145,7 @@ export default function Rtc() {
             <div>
                 <a href={`http://localhost:3000/?id=${id}`} target="_blank">{id}</a>
             </div>
-            
+
             {/* Chat: <input id="chat" onKeyPress={(e) => {
                 if (e.key != 13) return;
                 dataChannel.send(chat.value);
