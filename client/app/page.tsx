@@ -4,14 +4,8 @@ import React, { useEffect, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { BiCopy } from 'react-icons/bi';
 import './style.css'
-import JSEncrypt from 'jsencrypt';
-import JSON from 'json3';
-import pako from 'pako';
 import * as crpt from './encryption';
 
-
-
-const { subtle } = globalThis.crypto;
 
 const serverUrl = "ws://localhost:8080/ws";
 
@@ -178,12 +172,25 @@ export default function Home() {
       const worker = new Worker(new URL('./workers/receive-file.ts', import.meta.url));
       // Define the event listener to handle messages from the worker
       worker.onmessage = function (event) {
-      const downloadLink = document.createElement('a');
-      downloadLink.href = event.data.data;
-      downloadLink.download = event.data.name;
-  
-      // Trigger the download
-      downloadLink.click();
+        receivedChunks.set(event.data.currentChunk, event.data.decryptedChunk);
+        let name = event.data.name;
+        if (hasKeys(receivedChunks, event.data.totalChunks)) {
+          const decryper = new Worker(new URL('./workers/decompress-file.ts', import.meta.url));
+
+          decryper.onmessage = function (event) {
+            const downloadLink = document.createElement('a');
+            downloadLink.href = event.data.data;
+            downloadLink.download = name;
+        
+            // Trigger the download
+            downloadLink.click();
+          };
+
+          decryper.postMessage(receivedChunks);
+          return () => {
+            decryper.terminate();
+          }
+        }
       };
 
       // Send data to the worker
@@ -196,6 +203,14 @@ export default function Home() {
       };
     }
 
+    function hasKeys(map: Map<number, any>, desiredNumber: number): boolean {
+      for (let i = 1; i <= desiredNumber; i++) {
+        if (!map.has(i)) {
+          return false;
+        }
+      }
+      return true;
+    }
 
     const sendClientInfo = async () => {
       console.log('Sending client info...');
