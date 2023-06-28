@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -43,9 +44,9 @@ type Client struct {
 
 	pairedFlag chan bool
 
-	mutex sync.Mutex
-
 	stopFlag chan bool
+  
+	idleTimer *time.Timer
 }
 
 var upgrader = websocket.Upgrader{
@@ -53,20 +54,41 @@ var upgrader = websocket.Upgrader{
 	WriteBufferSize: 1024,
 }
 
-func (c *Client) closeConnection() error {
-	c.mutex.Lock()
-	defer c.mutex.Unlock()
-	c.stopFlag <- true
+func (c *Client) handleTimeout() {
+	for {
+		select {
+		case <-c.idleTimer.C:
+			log.Println("Client idle timeout reached")
+			c.closeConnection(websocket.CloseInternalServerErr, "Client idle timeout reached")
+			return
+		}
+	}
+}
+
+func (c *Client) resetIdleTimer() {
+	if !c.idleTimer.Stop() {
+		<-c.idleTimer.C
+	}
+	c.idleTimer.Reset(idleTimeout)
+}
+
+func (c *Client) closeConnection(closeCode int, closeMessage string) error {
+	c.idleTimer.Stop() // to avoid potential goroutine leaks
+  c.stopFlag = true
 	var err error
 
-	if c.pair != nil {
-		err = c.pair.conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseAbnormalClosure, "Closing connection"), time.Now().Add(time.Second*1))
+	if c.conn != nil {
+		err = c.conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(closeCode, closeMessage), time.Now().Add(time.Second*5))
+
 		if err != nil {
-			log.Println("Error writing control message:", err)
+			log.Println("Error writing control message:", err.Error())
+			if isCloseError(err) {
+				return nil
+			}
 			return err
 		}
 
-		err = c.pair.conn.Close()
+		err = c.conn.Close()
 		if err != nil {
 			log.Println("Error closing connection:", err)
 			return err
@@ -78,25 +100,34 @@ func (c *Client) closeConnection() error {
 
 // Writes data to websocket.
 func (c *Client) writeData(flag chan bool) {
-	loop := true
-	for loop {
-		select {
-		case <-c.pairedFlag:
-			loop = false
-		case <-flag:
-			return
-		}
-	}
+	messageBytes := []byte{}
+  loop := true
+  
+  for loop {
+    select {
+    case <-c.pairedFlag:
+      loop = false
+    case <-flag:
+      return
+    }
+  }
+
 	for {
 		select {
-		case message := <-c.pair.sendMessage:
+    case message := <-c.pair.sendMessage:
+			messageBytes = append(messageBytes[:0], message...)
 			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
-			err := c.conn.WriteMessage(websocket.TextMessage, []byte(message))
+			err := c.conn.WriteMessage(websocket.TextMessage, messageBytes)
 			if err != nil {
 				log.Println("Error writing message:", err)
-				c.closeConnection()
+				if isCloseError(err) {
+					return
+				}
+				c.closeConnection(websocket.CloseAbnormalClosure, "Closing connection")
+				c.pair.closeConnection(websocket.CloseAbnormalClosure, "Closing connection")
 				return
 			}
+      c.resetIdleTimer()
 		case <-flag:
 			return
 		}
@@ -104,21 +135,27 @@ func (c *Client) writeData(flag chan bool) {
 }
 
 func (c *Client) sendPing(stop chan bool) {
+	pingMessage := []byte("ping")
+
 	ticker := time.NewTicker(pingPeriod)
 	defer ticker.Stop()
 
-	for {
-		select {
-		case <-ticker.C:
-			if err := c.conn.WriteControl(websocket.PingMessage, []byte("ping"), time.Now().Add(writeWait)); err != nil {
-				log.Println("Error sending ping:", err)
-				c.closeConnection()
-				return
-			}
-		case <-stop:
-			return
-		}
-	}
+  for {
+    select {
+    case <-ticker.C:
+      if err := c.conn.WriteControl(websocket.PingMessage, pingMessage, time.Now().Add(writeWait)); err != nil {
+        log.Println("Error sending ping:", err)
+        if isCloseError(err) {
+          return
+        }
+        c.closeConnection(websocket.CloseAbnormalClosure, "Closing connection")
+			  c.pair.closeConnection(websocket.CloseAbnormalClosure, "Closing connection")
+        return
+      }
+    case <-stop:
+      return
+    }
+  }
 }
 
 // Reads data from websocket and places it into data channel.
@@ -128,15 +165,22 @@ func (c *Client) readData() {
 		c.conn.SetReadDeadline(time.Now().Add(pongWait))
 		return nil
 	})
+
 	for {
 		c.conn.SetReadDeadline(time.Now().Add(idleTimeout))
 		_, message, err := c.conn.ReadMessage()
 		if err != nil {
 			log.Println("Error reading message:", err)
-			c.closeConnection()
+			if isCloseError(err) {
+				return
+			}
+			c.closeConnection(websocket.CloseAbnormalClosure, "Closing connection")
+			c.pair.closeConnection(websocket.CloseAbnormalClosure, "Closing connection")
 			return
 		}
 		c.sendMessage <- string(message)
+
+		c.resetIdleTimer()
 	}
 }
 
@@ -161,6 +205,7 @@ func handle(s *Server, w http.ResponseWriter, r *http.Request, m *sync.Mutex) {
 		sendMessage: make(chan string),
 		stopFlag:    stopFlag,
 		pairedFlag:  make(chan bool),
+		idleTimer:   time.NewTimer(time.Minute * 6), // Initial timer duration is a little longer than idleTimeout
 	}
 
 	// Read ID from query.
@@ -191,6 +236,11 @@ func handle(s *Server, w http.ResponseWriter, r *http.Request, m *sync.Mutex) {
 	}
 
 	go client.readData()
-	go client.writeData(stopFlag)
-	go client.sendPing(stopFlag)
+	go client.writeData()
+	go client.sendPing()
+	go client.handleTimeout()
+}
+
+func isCloseError(err error) bool {
+	return strings.Contains(err.Error(), "use of closed network connection") || strings.Contains(err.Error(), "close sent")
 }
