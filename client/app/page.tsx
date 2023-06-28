@@ -32,7 +32,7 @@ export default function Home() {
   const [peerAccepted, setPeerAccepted] = useState(false);
   const [clientName, setClientName] = useState('');
   const [selectetdFile, setSelectedFile] = useState([]);
-  var receivedChunks: ArrayBuffer = new ArrayBuffer(0);
+  var receivedChunks: Map<number, ArrayBuffer> = new Map();
 
   useEffect(() => {
     if (keyPair)
@@ -56,7 +56,6 @@ export default function Home() {
   }, [isConnecting]);
 
   useEffect(() => {
-    console.log('Status changed: ', socket);
     if (peerPublicKey && socket)
       sendClientInfo();
   }, [peerPublicKey, socket]);
@@ -79,7 +78,8 @@ export default function Home() {
 
 
   const generateKeyPair = async () => {
-    setKeyPair(await crpt.generateKeyPair());
+    const keyPair = await crpt.generateKeyPair();
+    setKeyPair(keyPair);
   }
 
   const generatePeerName = () => {
@@ -139,7 +139,7 @@ export default function Home() {
       } else if (event.data.slice(0, 12) === 'public-key: ') {
         console.log('Received public key: ', event.data.slice(12));
         let key = event.data.slice(12);
-        crpt.importAndSetPeerPublicKey(key);
+        setPeerPublicKey(await crpt.importAndSetPeerPublicKey(key));
 
       } else if (event.data.slice(0, 5) === 'msg: ') {
         // Q: Why use msg: prefix?
@@ -160,7 +160,6 @@ export default function Home() {
       }
     });
 
-
     socket.addEventListener('close', (event) => {
       console.log('WebSocket connection closed.', event.reason);
       if (event.reason === 'Client with this ID does not exist')
@@ -175,55 +174,37 @@ export default function Home() {
     });};
 
 
+    const receiveFileByChunks = async (encrypted: string) => {
+      const worker = new Worker(new URL('./workers/receive-file.ts', import.meta.url));
+      // Define the event listener to handle messages from the worker
+      worker.onmessage = function (event) {
+      const downloadLink = document.createElement('a');
+      downloadLink.href = event.data.data;
+      downloadLink.download = event.data.name;
+  
+      // Trigger the download
+      downloadLink.click();
+      };
+
+      // Send data to the worker
+      const data = {encrypted: encrypted, keyPair: keyPair, receivedChunks: receivedChunks};
+      worker.postMessage(data);
+
+      // Cleanup the worker when the component unmounts
+      return () => {
+        worker.terminate();
+      };
+    }
+
+
     const sendClientInfo = async () => {
       console.log('Sending client info...');
       var peerName = generatePeerName();
-      //setPeerName(generatePeerName());
-    //   let encryptedString = await encrypt("device: " + navigator.userAgent);
       let encryptedString = await crpt.encrypt(peerName, peerPublicKey);
       setClientName(peerName);
       socket!.send("client-info: " + encryptedString);
       console.log('Sent client info: ', encryptedString);
     }
-
-
-    const receiveFileByChunks = async (encrypted: string) => {
-      const json = JSON.parse(encrypted);
-      const algorithm = {
-        name: 'AES-CBC',
-        length: 256
-      };
-      const decryptedKey = await crpt.decrypt(json.key, keyPair) as string;
-      console.log("1");
-      const key = await crypto.subtle.importKey('raw', crpt.stringToArrayBuffer(decryptedKey), algorithm, true, ['encrypt', 'decrypt']);
-      console.log("2");
-      const decryptedChunk = await crpt.decryptAES(crpt.stringToArrayBuffer(json.chunk), crpt.stringToArrayBuffer(json.iv), key);
-      console.log("3");
-      // Append the received chunk to the file
-      let combinedLength = receivedChunks.byteLength + decryptedChunk.byteLength;
-      let combinedArray = new Uint8Array(combinedLength);
-      combinedArray.set(new Uint8Array(receivedChunks), 0);
-      combinedArray.set(new Uint8Array(decryptedChunk), receivedChunks.byteLength);
-      receivedChunks = combinedArray.buffer;
-      // Check if all chunks have been received
-      if (json.currentChunk === json.totalChunks) {
-        let start = new Date().getTime();
-        const decompressedChunk = pako.inflate(receivedChunks, { to: 'string' });
-        let end = new Date().getTime();
-        console.log("Decompression time: " + (end - start)/1000);
-
-        const downloadLink = document.createElement('a');
-        downloadLink.href = decompressedChunk;
-        downloadLink.download = json.name;
-    
-        // Trigger the download
-        downloadLink.click();
-    
-        // Clear the received chunks
-        receivedChunks = new ArrayBuffer(0);
-      }
-    };
-
 
     const acceptPairing = async () => {
       setPairingAccepted(true);
@@ -260,8 +241,7 @@ export default function Home() {
   };
 
   const handleSendFile = async () => {
-    
-  const worker = new Worker('/send-file.ts');
+    const worker = new Worker(new URL('./workers/send-file.ts', import.meta.url));
 
   // Define the event listener to handle messages from the worker
   worker.onmessage = function (event) {

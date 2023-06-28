@@ -1,4 +1,4 @@
-import * as crpt from './encryption';
+import * as crpt from '../encryption';
 import pako from 'pako';
 
 self.onmessage = async (event: any) => {
