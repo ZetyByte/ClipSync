@@ -45,7 +45,7 @@ type Client struct {
 	pairedFlag chan bool
 
 	stopFlag chan bool
-  
+
 	idleTimer *time.Timer
 }
 
@@ -74,7 +74,7 @@ func (c *Client) resetIdleTimer() {
 
 func (c *Client) closeConnection(closeCode int, closeMessage string) error {
 	c.idleTimer.Stop() // to avoid potential goroutine leaks
-  c.stopFlag = true
+	c.stopFlag <- true
 	var err error
 
 	if c.conn != nil {
@@ -101,20 +101,20 @@ func (c *Client) closeConnection(closeCode int, closeMessage string) error {
 // Writes data to websocket.
 func (c *Client) writeData(flag chan bool) {
 	messageBytes := []byte{}
-  loop := true
-  
-  for loop {
-    select {
-    case <-c.pairedFlag:
-      loop = false
-    case <-flag:
-      return
-    }
-  }
+	loop := true
+
+	for loop {
+		select {
+		case <-c.pairedFlag:
+			loop = false
+		case <-flag:
+			return
+		}
+	}
 
 	for {
 		select {
-    case message := <-c.pair.sendMessage:
+		case message := <-c.pair.sendMessage:
 			messageBytes = append(messageBytes[:0], message...)
 			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
 			err := c.conn.WriteMessage(websocket.TextMessage, messageBytes)
@@ -127,7 +127,7 @@ func (c *Client) writeData(flag chan bool) {
 				c.pair.closeConnection(websocket.CloseAbnormalClosure, "Closing connection")
 				return
 			}
-      c.resetIdleTimer()
+			c.resetIdleTimer()
 		case <-flag:
 			return
 		}
@@ -140,22 +140,22 @@ func (c *Client) sendPing(stop chan bool) {
 	ticker := time.NewTicker(pingPeriod)
 	defer ticker.Stop()
 
-  for {
-    select {
-    case <-ticker.C:
-      if err := c.conn.WriteControl(websocket.PingMessage, pingMessage, time.Now().Add(writeWait)); err != nil {
-        log.Println("Error sending ping:", err)
-        if isCloseError(err) {
-          return
-        }
-        c.closeConnection(websocket.CloseAbnormalClosure, "Closing connection")
-			  c.pair.closeConnection(websocket.CloseAbnormalClosure, "Closing connection")
-        return
-      }
-    case <-stop:
-      return
-    }
-  }
+	for {
+		select {
+		case <-ticker.C:
+			if err := c.conn.WriteControl(websocket.PingMessage, pingMessage, time.Now().Add(writeWait)); err != nil {
+				log.Println("Error sending ping:", err)
+				if isCloseError(err) {
+					return
+				}
+				c.closeConnection(websocket.CloseAbnormalClosure, "Closing connection")
+				c.pair.closeConnection(websocket.CloseAbnormalClosure, "Closing connection")
+				return
+			}
+		case <-stop:
+			return
+		}
+	}
 }
 
 // Reads data from websocket and places it into data channel.
@@ -236,8 +236,8 @@ func handle(s *Server, w http.ResponseWriter, r *http.Request, m *sync.Mutex) {
 	}
 
 	go client.readData()
-	go client.writeData()
-	go client.sendPing()
+	go client.writeData(stopFlag)
+	go client.sendPing(stopFlag)
 	go client.handleTimeout()
 }
 
