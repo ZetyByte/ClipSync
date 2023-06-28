@@ -146,17 +146,17 @@ export default function Home() {
     }
   };
   
-
-function arrayBufferToString(buffer: ArrayBuffer): string {
-  const view = new Uint8Array(buffer);
-
-  let asciiString = '';
-  for (let i = 0; i < view.length; i++) {
-    const asciiChar = String.fromCharCode(view[i]);
-    asciiString += asciiChar;
-  }
-  return asciiString;
-}
+  function arrayBufferToString(buffer: ArrayBuffer): string {
+    const view = new Uint8Array(buffer);
+    const length = view.length;
+    const result = new Array(length);
+  
+    for (let i = 0; i < length; i++) {
+      result[i] = String.fromCharCode(view[i]);
+    }
+  
+    return result.join('');
+  }  
 
 function stringToArrayBuffer(str: string): ArrayBuffer {
   const view = new Uint8Array(str.length);
@@ -370,11 +370,13 @@ async function decryptAES(encryptedData: BufferSource, iv : BufferSource , key: 
       receivedChunks = combinedArray.buffer;
       // Check if all chunks have been received
       if (json.currentChunk === json.totalChunks) {
-        const decompressedChunk = pako.inflate(receivedChunks);
-        console.log("4");
-    
+        let start = new Date().getTime();
+        const decompressedChunk = pako.inflate(receivedChunks, { to: 'string' });
+        let end = new Date().getTime();
+        console.log("Decompression time: " + (end - start)/1000);
+
         const downloadLink = document.createElement('a');
-        downloadLink.href = arrayBufferToString(decompressedChunk);
+        downloadLink.href = decompressedChunk;
         downloadLink.download = json.name;
     
         // Trigger the download
