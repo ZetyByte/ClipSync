@@ -44,6 +44,9 @@ func pairClients(client1, client2 *Client) {
 	client1.pair = client2
 	client2.pair = client1
 
+	client1.pairedFlag <- true
+	client2.pairedFlag <- true
+
 	client1.resetIdleTimer()
 	client2.resetIdleTimer()
 }

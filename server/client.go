@@ -24,7 +24,11 @@ const (
 	// Maximum message size allowed from peer.
 	maxMessageSize = 4096
 
-	idleTimeout = time.Second * 30
+	// Time interval between checking if the client is paired.
+	checkingInterval = 1 * time.Second
+
+	// Time after which the client will be disconnected if it is idle.
+	idleTimeout = 5 * time.Minute
 )
 
 type Client struct {
@@ -37,6 +41,10 @@ type Client struct {
 	peerID string
 
 	pair *Client
+
+	pairedFlag chan bool
+
+	stopFlag chan bool
 
 	idleTimer *time.Timer
 }
@@ -66,6 +74,7 @@ func (c *Client) resetIdleTimer() {
 
 func (c *Client) closeConnection(closeCode int, closeMessage string) error {
 	c.idleTimer.Stop() // to avoid potential goroutine leaks
+	c.stopFlag <- true
 	var err error
 
 	if c.conn != nil {
@@ -90,12 +99,22 @@ func (c *Client) closeConnection(closeCode int, closeMessage string) error {
 }
 
 // Writes data to websocket.
-func (c *Client) writeData() {
+func (c *Client) writeData(flag chan bool) {
 	messageBytes := []byte{}
+	loop := true
+
+	for loop {
+		select {
+		case <-c.pairedFlag:
+			loop = false
+		case <-flag:
+			return
+		}
+	}
 
 	for {
-		if c.pair != nil {
-			message := <-c.pair.sendMessage
+		select {
+		case message := <-c.pair.sendMessage:
 			messageBytes = append(messageBytes[:0], message...)
 			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
 			err := c.conn.WriteMessage(websocket.TextMessage, messageBytes)
@@ -109,24 +128,31 @@ func (c *Client) writeData() {
 				return
 			}
 			c.resetIdleTimer()
+		case <-flag:
+			return
 		}
 	}
 }
 
-func (c *Client) sendPing() {
+func (c *Client) sendPing(stop chan bool) {
 	pingMessage := []byte("ping")
 
 	ticker := time.NewTicker(pingPeriod)
 	defer ticker.Stop()
 
-	for range ticker.C {
-		if err := c.conn.WriteControl(websocket.PingMessage, pingMessage, time.Now().Add(writeWait)); err != nil {
-			log.Println("Error sending ping:", err)
-			if isCloseError(err) {
+	for {
+		select {
+		case <-ticker.C:
+			if err := c.conn.WriteControl(websocket.PingMessage, pingMessage, time.Now().Add(writeWait)); err != nil {
+				log.Println("Error sending ping:", err)
+				if isCloseError(err) {
+					return
+				}
+				c.closeConnection(websocket.CloseAbnormalClosure, "Closing connection")
+				c.pair.closeConnection(websocket.CloseAbnormalClosure, "Closing connection")
 				return
 			}
-			c.closeConnection(websocket.CloseAbnormalClosure, "Closing connection")
-			c.pair.closeConnection(websocket.CloseAbnormalClosure, "Closing connection")
+		case <-stop:
 			return
 		}
 	}
@@ -141,6 +167,7 @@ func (c *Client) readData() {
 	})
 
 	for {
+		c.conn.SetReadDeadline(time.Now().Add(idleTimeout))
 		_, message, err := c.conn.ReadMessage()
 		if err != nil {
 			log.Println("Error reading message:", err)
@@ -171,11 +198,14 @@ func handle(s *Server, w http.ResponseWriter, r *http.Request, m *sync.Mutex) {
 	}
 	conn.SetReadLimit(maxMessageSize)
 
+	stopFlag := make(chan bool)
 	client := Client{
 		server:      s,
 		conn:        conn,
 		sendMessage: make(chan string),
-		idleTimer:   time.NewTimer(time.Minute * 2), // Initial timer duration is a little longer than idleTimeout
+		stopFlag:    stopFlag,
+		pairedFlag:  make(chan bool),
+		idleTimer:   time.NewTimer(time.Minute * 6), // Initial timer duration is a little longer than idleTimeout
 	}
 
 	// Read ID from query.
@@ -206,8 +236,8 @@ func handle(s *Server, w http.ResponseWriter, r *http.Request, m *sync.Mutex) {
 	}
 
 	go client.readData()
-	go client.writeData()
-	go client.sendPing()
+	go client.writeData(stopFlag)
+	go client.sendPing(stopFlag)
 	go client.handleTimeout()
 }
 

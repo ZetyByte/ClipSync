@@ -54,7 +54,7 @@ func TestClient_sendPing(t *testing.T) {
 		return nil
 	})
 
-	go client.sendPing()
+	go client.sendPing(flag)
 
 	// SetPingHandler is only called when a ping message is received via NextReader, ReadMessage, or message Read methods.
 	// refer to https://godoc.org/github.com/gorilla/websocket#Conn.SetPingHandler
@@ -90,11 +90,13 @@ func TestClient_writeData(t *testing.T) {
 	client.pair = &pair
 	pair.sendMessage <- testMessage
 
-	go client.writeData()
+	flag := make(chan bool)
+	go client.writeData(flag)
 
 	verifyMessage(conn, t, testMessage)
 
 	pair.sendMessage <- testMessage
+	flag <- true
 }
 
 func TestClient_readData(t *testing.T) {
@@ -108,7 +110,8 @@ func TestClient_readData(t *testing.T) {
 	conn := connectToWebsocket(server, t, nil, "")
 	defer conn.Close()
 
-	go client.sendPing()
+	flag := make(chan bool)
+	go client.sendPing(flag)
 	go client.readData()
 
 	writeMessage(conn, t, testMessage)
@@ -116,6 +119,7 @@ func TestClient_readData(t *testing.T) {
 	if message := <-client.sendMessage; message != testMessage {
 		t.Fatal("Expected message to be equal to testMessage, got", message)
 	}
+	flag <- true
 }
 
 func TestClient_handle(t *testing.T) {
