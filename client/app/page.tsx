@@ -107,9 +107,12 @@ export default function Home() {
 
 
   const getUrl = () => {
-    const urlParams = new URLSearchParams(window.location.search);
-    const id = urlParams.get('id');
-    return serverUrl + (id ? `?id=${id}` : '');
+    if(typeof window !== undefined) {
+      const urlParams = new URLSearchParams(window.location.search);
+      const id = urlParams.get('id');
+      return serverUrl + (id ? `?id=${id}` : '');
+    }
+    return serverUrl;
   }
 
   const connectWebSocket = () => {
@@ -166,19 +169,22 @@ export default function Home() {
       }
     });
 
+    socket.addEventListener('error', (error) => {
+      console.error('WebSocket connection error:', error);
+    });    
+
     socket.addEventListener('close', (event) => {
-      console.log('WebSocket connection closed.', event.reason);
+      console.log('WebSocket connection closed: ', event.reason);
       if (event.reason === 'Client with this ID does not exist')
       {
         setError("id-not-found");
-      }
-      else 
-      {
+      } else if (event.reason === "Client idle timeout reached") {
+        setError("idle-timeout-reached")
+      } else {
         setError("server-error");
       }
       disconnectClient();
     });};
-
 
     const receiveFileByChunks = async (encrypted: string) => {
       const worker = new Worker(new URL('./workers/receive-file.ts', import.meta.url));
@@ -213,7 +219,7 @@ export default function Home() {
       const data = {encrypted: encrypted, keyPair: keyPair, receivedChunks: receivedChunks};
       workerPool.addWorkerTask(new pool.WorkerTask(worker, callback, data));
     }
-
+    
     const sendClientInfo = async () => {
       console.log('Sending client info...');
       var peerName = generatePeerName();
@@ -326,6 +332,9 @@ export default function Home() {
           }
           {error === "server-error" &&
             <div className='error'>Connection error. Please try again.</div>
+          }
+          {error === "idle-timeout-reached" && 
+            <div className='error'>Idle timeout reached. You have been disconnected.</div>
           }
           <button className='btn' onClick={() => setIsConnecting(true)}>Connect</button>
         </div>
