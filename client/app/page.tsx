@@ -71,8 +71,10 @@ export default function Home() {
     setPairInfo("");
     setPairingAccepted(false);
     setPeerAccepted(false);
+    setSelectedFile([]);
+    receivedChunks = {};
+    setClientName('');
   }
-
 
   const generateKeyPair = async () => {
     const keyPair = await crpt.generateKeyPair();
