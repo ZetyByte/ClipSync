@@ -195,7 +195,7 @@ export default function Home() {
         
             // Trigger the download
             downloadLink.click();
-            //downloadLink.remove();
+            downloadLink.remove();
             receivedChunks = {};
             console.log(new Date().toLocaleTimeString())
           };
