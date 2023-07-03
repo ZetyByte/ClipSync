@@ -5,6 +5,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import { BiCopy } from 'react-icons/bi';
 import './style.css'
 import * as crpt from './encryption';
+import * as pool from './pool';
 
 
 const serverUrl = "ws://localhost:8080/ws";
@@ -26,11 +27,13 @@ export default function Home() {
   const [peerAccepted, setPeerAccepted] = useState(false);
   const [clientName, setClientName] = useState('');
   const [selectetdFile, setSelectedFile] = useState([]);
-  var receivedChunks: Map<number, ArrayBuffer> = new Map();
+  var receivedChunks: { [key: number]: ArrayBuffer } = {};
+  const workerPool = new pool.Pool(5);
 
   useEffect(() => {
     if (keyPair)
     {
+      workerPool.init();
       connectWebSocket();
       return () => {
         if (socket)
@@ -86,11 +89,18 @@ export default function Home() {
 
 
   const onFileChange = (e: any) => {
-    setSelectedFile(e.target.files);
-    console.log(e.target.files[0]);
-    console.log(e.target.files[0].name);
-    console.log(e.target.files[0].size);
-    console.log(e.target.files[0].type);
+    const maxFileSize = 200 * 1024 * 1024;
+    if (e.target.files[0] && e.target.files[0].size > maxFileSize) {
+      alert('File size exceeds 200MB');
+      e.target.value = null;
+    }
+    else {
+      setSelectedFile(e.target.files);
+      console.log(e.target.files[0]);
+      console.log(e.target.files[0].name);
+      console.log(e.target.files[0].size);
+      console.log(e.target.files[0].type);
+    }
   };
 
 
@@ -171,22 +181,26 @@ export default function Home() {
     const receiveFileByChunks = async (encrypted: string) => {
       const worker = new Worker(new URL('./workers/receive-file.ts', import.meta.url));
       // Define the event listener to handle messages from the worker
-      worker.onmessage = function (event) {
-        receivedChunks.set(event.data.currentChunk, event.data.decryptedChunk);
+      const callback = function (event: MessageEvent) {
+        receivedChunks[event.data.currentChunk as number] = event.data.decryptedChunk;
         let name = event.data.name;
-        if (hasKeys(receivedChunks, event.data.totalChunks)) {
+        console.log("keys: ", Object.keys(receivedChunks).length);
+        if (Object.keys(receivedChunks).length === event.data.totalChunks) {
           const decryper = new Worker(new URL('./workers/decompress-file.ts', import.meta.url));
 
           decryper.onmessage = function (event) {
             const downloadLink = document.createElement('a');
-            downloadLink.href = event.data.data;
+            downloadLink.href = URL.createObjectURL(event.data.data);
             downloadLink.download = name;
         
             // Trigger the download
             downloadLink.click();
+            //downloadLink.remove();
+            receivedChunks = {};
+            console.log(new Date().toLocaleTimeString())
           };
 
-          decryper.postMessage(receivedChunks);
+          decryper.postMessage({receivedChunks: receivedChunks, type: event.data.type});
           return () => {
             decryper.terminate();
           }
@@ -195,21 +209,7 @@ export default function Home() {
 
       // Send data to the worker
       const data = {encrypted: encrypted, keyPair: keyPair, receivedChunks: receivedChunks};
-      worker.postMessage(data);
-
-      // Cleanup the worker when the component unmounts
-      return () => {
-        worker.terminate();
-      };
-    }
-
-    function hasKeys(map: Map<number, any>, desiredNumber: number): boolean {
-      for (let i = 1; i <= desiredNumber; i++) {
-        if (!map.has(i)) {
-          return false;
-        }
-      }
-      return true;
+      workerPool.addWorkerTask(new pool.WorkerTask(worker, callback, data));
     }
 
     const sendClientInfo = async () => {
@@ -256,6 +256,7 @@ export default function Home() {
   };
 
   const handleSendFile = async () => {
+    console.log(new Date().toLocaleTimeString())
     const worker = new Worker(new URL('./workers/send-file.ts', import.meta.url));
 
   // Define the event listener to handle messages from the worker
@@ -398,3 +399,5 @@ export default function Home() {
     </div>
 </main>)
 }
+
+

@@ -9,6 +9,7 @@ self.onmessage = async (event: any) => {
       name: 'AES-CBC',
       length: 256
     };
+    console.log(json.currentChunk);
     const decryptedKey = await crpt.decrypt(json.key, keyPair) as string;
     const key = await crypto.subtle.importKey('raw', crpt.stringToArrayBuffer(decryptedKey), algorithm, true, ['encrypt', 'decrypt']);
     const decryptedChunk = await crpt.decryptAES(crpt.stringToArrayBuffer(json.chunk), crpt.stringToArrayBuffer(json.iv), key);
