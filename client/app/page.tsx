@@ -91,7 +91,7 @@ export default function Home() {
   const onFileChange = (e: any) => {
     const maxFileSize = 200 * 1024 * 1024;
     if (e.target.files[0] && e.target.files[0].size > maxFileSize) {
-      alert('File size exceeds 200MB');
+      alert('Max file size is ' + maxFileSize / 1024 / 1024 + 'MB.')
       e.target.value = null;
     }
     else {
