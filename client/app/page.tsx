@@ -4,8 +4,9 @@ import React, { useEffect, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { BiCopy } from 'react-icons/bi';
 import './style.css'
+import * as crpt from './encryption';
+import * as pool from './pool';
 
-const { subtle } = globalThis.crypto;
 
 const serverUrl = "ws://localhost:8080/ws";
 
@@ -25,10 +26,14 @@ export default function Home() {
   const [pairingAccepted, setPairingAccepted] = useState(false);
   const [peerAccepted, setPeerAccepted] = useState(false);
   const [clientName, setClientName] = useState('');
+  const [selectetdFile, setSelectedFile] = useState([]);
+  var receivedChunks: { [key: number]: ArrayBuffer } = {};
+  const workerPool = new pool.Pool(5);
 
   useEffect(() => {
     if (keyPair)
     {
+      workerPool.init();
       connectWebSocket();
       return () => {
         if (socket)
@@ -44,11 +49,10 @@ export default function Home() {
   
   useEffect(() => {
     if (isConnecting)
-      generateKeyPair();
+    generateKeyPair();
   }, [isConnecting]);
 
   useEffect(() => {
-    console.log('Status changed: ', socket);
     if (peerPublicKey && socket)
       sendClientInfo();
   }, [peerPublicKey, socket]);
@@ -67,62 +71,39 @@ export default function Home() {
     setPairInfo("");
     setPairingAccepted(false);
     setPeerAccepted(false);
-  }
-
-  const generatePeerName = () => {
-    let adjectives = ['Amazing', 'Awesome', 'Beautiful', 'Brave', 'Bright', 'Calm', 'Clever', 'Cool', 'Cute', 'Dazzling', 'Elegant', 'Enchanting', 'Fabulous', 'Fantastic', 'Friendly', 'Funny', 'Gentle', 'Glamorous', 'Gorgeous', 'Graceful', 'Handsome', 'Happy', 'Healthy', 'Helpful', 'Hilarious', 'Humorous', 'Jolly', 'Joyous', 'Kind', 'Lively', 'Lovely', 'Lucky', 'Magnificent', 'Nice', 'Perfect', 'Pleasant', 'Proud', 'Silly', 'Smiling', 'Splendid', 'Successful', 'Thoughtful', 'Victorious', 'Vivacious', 'Witty', 'Wonderful'];
-
-    let nouns = ['Apple', 'Banana', 'Bread', 'Butter', 'Cake', 'Carrot', 'Cheese', 'Chicken', 'Chocolate', 'Cookie', 'Cucumber', 'Egg', 'Fish', 'Garlic', 'Grape', 'Honey', 'Ice cream', 'Juice', 'Lemon', 'Lime', 'Mango', 'Milk', 'Mushroom', 'Noodles', 'Olive', 'Onion', 'Orange', 'Pasta', 'Peach', 'Pear', 'Pepper', 'Pineapple', 'Pizza', 'Potato', 'Pumpkin', 'Rice', 'Salad', 'Sandwich', 'Sausage', 'Soup', 'Steak', 'Strawberry', 'Tomato', 'Watermelon'];
-    
-    return adjectives[Math.floor(Math.random() * adjectives.length) + 1] + ' ' + nouns[Math.floor(Math.random() * nouns.length) + 1 ];
-  }
-
-  const encrypt = async (message: string) => {
-    let publicKeyBuffer = await subtle.exportKey("spki", peerPublicKey!)
-    let publicKey = Buffer.from(publicKeyBuffer).toString('base64');
-    const JSEncrypt = (await import('jsencrypt')).default;
-    const jsEncrypt = new JSEncrypt();
-    jsEncrypt.setPublicKey(publicKey);
-    return jsEncrypt.encrypt(message);
-  }
-
-  const decrypt = async (message: string) => {
-    let privateKeyBuffer = await subtle.exportKey("pkcs8", keyPair!.privateKey)
-    let privateKey = Buffer.from(privateKeyBuffer).toString('base64');
-    const JSEncrypt = (await import('jsencrypt')).default;
-    const jsEncrypt = new JSEncrypt();
-    jsEncrypt.setPrivateKey(privateKey);
-    return jsEncrypt.decrypt(message);
+    setSelectedFile([]);
+    receivedChunks = {};
+    setClientName('');
   }
 
   const generateKeyPair = async () => {
-    let localKeyPair = await subtle.generateKey(
-      {
-        name: "RSA-OAEP",
-        modulusLength: 2048,
-        publicExponent: new Uint8Array([1, 0, 1]),
-        hash: "SHA-256",
-      },
-      true,
-      ["encrypt", "decrypt"]
-    );
-    setKeyPair(localKeyPair);
-    console.log('Generated key pair: ', localKeyPair);
+    const keyPair = await crpt.generateKeyPair();
+    setKeyPair(keyPair);
+  }
+
+  const generatePeerName = () => {
+    let adjectives = ['Amazing', 'Awesome', 'Beautiful', 'Brave', 'Bright', 'Calm', 'Clever', 'Cool', 'Cute', 'Dazzling', 'Elegant', 'Enchanting', 'Fabulous', 'Fantastic', 'Friendly', 'Funny', 'Gentle', 'Glamorous', 'Gorgeous', 'Graceful', 'Handsome', 'Happy', 'Healthy', 'Helpful', 'Hilarious', 'Humorous', 'Jolly', 'Joyous', 'Kind', 'Lively', 'Lovely', 'Lucky', 'Magnificent', 'Nice', 'Perfect', 'Pleasant', 'Proud', 'Silly', 'Smiling', 'Splendid', 'Successful', 'Thoughtful', 'Victorious', 'Vivacious', 'Witty', 'Wonderful','Adventurous', 'Blissful', 'Charming', 'Delightful', 'Exquisite', 'Fierce', 'Glowing', 'Harmonious', 'Incredible', 'Jubilant'];
+
+    let nouns = ['Apple', 'Banana', 'Bread', 'Butter', 'Cake', 'Carrot', 'Cheese', 'Chicken', 'Chocolate', 'Cookie', 'Cucumber', 'Egg', 'Fish', 'Garlic', 'Grape', 'Honey', 'Ice cream', 'Juice', 'Lemon', 'Lime', 'Mango', 'Milk', 'Mushroom', 'Noodles', 'Olive', 'Onion', 'Orange', 'Pasta', 'Peach', 'Pear', 'Pepper', 'Pineapple', 'Pizza', 'Potato', 'Pumpkin', 'Rice', 'Salad', 'Sandwich', 'Sausage', 'Soup', 'Steak', 'Strawberry', 'Tomato', 'Watermelon' ,'Quinoa', 'Raspberry', 'Sunflower', 'Tea', 'Vanilla', 'Walnut', 'Yogurt', 'Zucchini'];
+    
+    return adjectives[Math.floor(Math.random() * adjectives.length)] + ' ' + nouns[Math.floor(Math.random() * nouns.length)];
   }
 
 
-  const sendPublicKey = async (socket: WebSocket) => {
-    let publicKeyBuffer = await subtle.exportKey("spki", keyPair!.publicKey);
-    let publicKey = Buffer.from(publicKeyBuffer).toString('base64');
-    socket.send('public-key: ' + publicKey);
-  }
-
-
-  const importAndSetPeerPublicKey = async (key: string) => {
-    let publicKey = await subtle.importKey("spki", Buffer.from(key, 'base64'), {name: "RSA-OAEP", hash: "SHA-256"}, true, ["encrypt"]);
-    setPeerPublicKey(publicKey);
-    console.log('Imported public key: ', publicKey);
-  }
+  const onFileChange = (e: any) => {
+    const maxFileSize = 200 * 1024 * 1024;
+    if (e.target.files[0] && e.target.files[0].size > maxFileSize) {
+      alert('Max file size is ' + maxFileSize / 1024 / 1024 + 'MB.')
+      e.target.value = null;
+    }
+    else {
+      setSelectedFile(e.target.files);
+      console.log(e.target.files[0]);
+      console.log(e.target.files[0].name);
+      console.log(e.target.files[0].size);
+      console.log(e.target.files[0].type);
+    }
+  };
 
 
   const getUrl = () => {
@@ -147,18 +128,17 @@ export default function Home() {
 
     // Listen for messages
     socket.addEventListener('message', async (event) => {
-      console.log('Received message: ', event.data);
       if (event.data === 'ping') {
         socket.send('pong');
 
       } else if (event.data.slice(0, 13) === 'client-info: ') {
         let encrypted = event.data.slice(13);
-        let decrypted = await decrypt(encrypted);
+        let decrypted = await crpt.decrypt(encrypted, keyPair);
         console.log('Decrypted client info: ', decrypted);
         setPairInfo(decrypted);
 
       } else if (event.data === 'connected') {
-        sendPublicKey(socket!);
+        crpt.sendPublicKey(socket!, keyPair);
 
       } else if (event.data.slice(0,11) === 'client-id: '){
         let clientId = event.data.slice(11);
@@ -168,19 +148,21 @@ export default function Home() {
       } else if (event.data.slice(0, 12) === 'public-key: ') {
         console.log('Received public key: ', event.data.slice(12));
         let key = event.data.slice(12);
-        importAndSetPeerPublicKey(key);
+        setPeerPublicKey(await crpt.importAndSetPeerPublicKey(key));
 
       } else if (event.data.slice(0, 5) === 'msg: ') {
         // Q: Why use msg: prefix?
         // A: Maybe someone sends a message that starts with 'client-id: ' or 'public-key: '?
         let encrypted = event.data.slice(5);
 
-        let decryptedString = await decrypt(encrypted);
+        let decryptedString = await crpt.decrypt(encrypted, keyPair);
         setHistory((prev: any) => [...prev, 'Peer: ' + decryptedString]);
         setChatStarted(true);
-      }
-      else if(event.data === 'accept-pairing'){
+      } else if(event.data === 'accept-pairing'){
         setPeerAccepted(true);
+      } else if(event.data.slice(0,6) === 'file: '){
+        let encrypted = event.data.slice(6);
+        receiveFileByChunks(encrypted);
       }
       else{
         console.log('Received unknown message: ', event.data);
@@ -204,18 +186,48 @@ export default function Home() {
       disconnectClient();
     });};
 
+    const receiveFileByChunks = async (encrypted: string) => {
+      const worker = new Worker(new URL('./workers/receive-file.ts', import.meta.url));
+      // Define the event listener to handle messages from the worker
+      const callback = function (event: MessageEvent) {
+        receivedChunks[event.data.currentChunk as number] = event.data.decryptedChunk;
+        let name = event.data.name;
+        console.log("keys: ", Object.keys(receivedChunks).length);
+        if (Object.keys(receivedChunks).length === event.data.totalChunks) {
+          const decryper = new Worker(new URL('./workers/decompress-file.ts', import.meta.url));
+
+          decryper.onmessage = function (event) {
+            const downloadLink = document.createElement('a');
+            downloadLink.href = URL.createObjectURL(event.data.data);
+            downloadLink.download = name;
+        
+            // Trigger the download
+            downloadLink.click();
+            downloadLink.remove();
+            receivedChunks = {};
+            console.log(new Date().toLocaleTimeString())
+          };
+
+          decryper.postMessage({receivedChunks: receivedChunks, type: event.data.type});
+          return () => {
+            decryper.terminate();
+          }
+        }
+      };
+
+      // Send data to the worker
+      const data = {encrypted: encrypted, keyPair: keyPair, receivedChunks: receivedChunks};
+      workerPool.addWorkerTask(new pool.WorkerTask(worker, callback, data));
+    }
     
     const sendClientInfo = async () => {
       console.log('Sending client info...');
       var peerName = generatePeerName();
-      //setPeerName(generatePeerName());
-    //   let encryptedString = await encrypt("device: " + navigator.userAgent);
-      let encryptedString = await encrypt(peerName);
+      let encryptedString = await crpt.encrypt(peerName, peerPublicKey);
       setClientName(peerName);
       socket!.send("client-info: " + encryptedString);
       console.log('Sent client info: ', encryptedString);
     }
-
 
     const acceptPairing = async () => {
       setPairingAccepted(true);
@@ -240,7 +252,7 @@ export default function Home() {
     
     setHistory((prev: any) => [...prev, 'You: ' + text]);
 
-    let encryptedString = await encrypt(text);
+    let encryptedString = await crpt.encrypt(text, peerPublicKey);
     socket.send("msg: " + encryptedString);
     setMessage('');
     setChatStarted(true);
@@ -250,6 +262,25 @@ export default function Home() {
   const handleSendMessage = async () => {
     await sendMessage(message);
   };
+
+  const handleSendFile = async () => {
+    console.log(new Date().toLocaleTimeString())
+    const worker = new Worker(new URL('./workers/send-file.ts', import.meta.url));
+
+  // Define the event listener to handle messages from the worker
+  worker.onmessage = function (event) {
+    socket!.send(event.data);
+  };
+
+  // Send data to the worker
+  const data = {file: selectetdFile[0], peerPublicKey: peerPublicKey};
+  worker.postMessage(data);
+
+  // Cleanup the worker when the component unmounts
+  return () => {
+    worker.terminate();
+  };
+};
 
 
   const clearMessages = () => {
@@ -372,8 +403,12 @@ export default function Home() {
                 <button className="btn clearMsg" onClick={clearMessages}>Clear Messages (Locally)</button>  
                 <button className="btn past-clipbrd" onClick={handlePaste}>Paste clipboard</button>
                 <button className='btn' onClick={() => disconnectButton()}>Disconnect</button>
+                <button className='btn' onClick={handleSendFile}>Send File</button>
+                <input type="file" id="input" onChange={onFileChange} />
             </div>            
         </div>}
     </div>
 </main>)
 }
+
+

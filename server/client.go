@@ -16,16 +16,13 @@ const (
 	writeWait = 10 * time.Second
 
 	// Time allowed to read the next pong message from the peer.
-	pongWait = 10 * time.Second
+	pongWait = 120 * time.Second
 
 	// Send pings to peer with this period. Must be less than pongWait.
 	pingPeriod = (pongWait * 9) / 10
 
 	// Maximum message size allowed from peer.
-	maxMessageSize = 4096
-
-	// Time interval between checking if the client is paired.
-	checkingInterval = 1 * time.Second
+	maxMessageSize = 9192
 
 	// Time after which the client will be disconnected if it is idle.
 	idleTimeout = 5 * time.Minute
@@ -196,7 +193,7 @@ func handle(s *Server, w http.ResponseWriter, r *http.Request, m *sync.Mutex) {
 		log.Println("Error upgrading connection:", err)
 		return
 	}
-	conn.SetReadLimit(maxMessageSize)
+	//conn.SetReadLimit(maxMessageSize)
 
 	stopFlag := make(chan bool)
 	client := Client{
