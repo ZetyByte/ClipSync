@@ -183,8 +183,6 @@ func (c *Client) readData() {
 
 // Handle creates a new client and lets the server process it.
 func handle(s *Server, w http.ResponseWriter, r *http.Request, m *sync.Mutex) {
-	log.Println("New client connected")
-
 	// TODO: remove in production (added for testing purposes)
 	upgrader.CheckOrigin = func(r *http.Request) bool { return true }
 

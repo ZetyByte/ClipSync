@@ -1,8 +1,6 @@
 package main
 
 import (
-	"log"
-
 	"github.com/gorilla/websocket"
 )
 
@@ -19,7 +17,6 @@ func (s *Server) process(flag chan bool) {
 		case client := <-s.registerID:
 			peer, ok := s.clients[client.peerID]
 			if ok {
-				log.Println("Paired clients")
 				pairClients(client, peer)
 
 				go client.handleTimeout()

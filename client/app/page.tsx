@@ -64,7 +64,6 @@ export default function Home() {
       socket.close();
       if (!chatStarted)
       {
-        console.log("chat not started");
         setHistory([]);
       }
       setStatus('disconnected');
@@ -180,7 +179,6 @@ export default function Home() {
       const callback = function (event: MessageEvent) {
         receivedChunks[event.data.currentChunk as number] = event.data.decryptedChunk;
         let name = event.data.name;
-        console.log("keys: ", Object.keys(receivedChunks).length);
         if (Object.keys(receivedChunks).length === event.data.totalChunks) {
           const decryper = new Worker(new URL('./workers/decompress-file.ts', import.meta.url));
 
@@ -193,7 +191,6 @@ export default function Home() {
             downloadLink.click();
             downloadLink.remove();
             receivedChunks = {};
-            console.log(new Date().toLocaleTimeString())
           };
 
           decryper.postMessage({receivedChunks: receivedChunks, type: event.data.type});

@@ -28,7 +28,6 @@ const Chat: React.FC<ChatProps> = ({socket, peerPublicKey, setChatStarted, setHi
     };
     
     const handleSendFile = async () => {
-        console.log(new Date().toLocaleTimeString())
         const worker = new Worker(new URL('./workers/send-file.ts', import.meta.url));
     
       // Define the event listener to handle messages from the worker
