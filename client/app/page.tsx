@@ -29,6 +29,7 @@ export default function Home() {
   const [Disconnect, setDisconnect] = useState(false);
   var receivedChunks: { [key: number]: ArrayBuffer } = {};
   const workerPool = new pool.Pool(5);
+  const encryptedStringLength = 344;
 
   useEffect(() => {
     if (keyPair)
@@ -103,69 +104,74 @@ export default function Home() {
   }
 
   const connectWebSocket = () => {
-    let url = getUrl();
-    var socket = new WebSocket(url);
-    setSocket(socket);
+      let url = getUrl();
+      var socket = new WebSocket(url);
+      setSocket(socket);
 
-    // Connection opened
-    socket.addEventListener('open', async (event) => {
-      setError("");
-    });
+      // Connection opened
+      socket.addEventListener('open', async (event) => {
+        setError("");
+      });
 
-    // Listen for messages
-    socket.addEventListener('message', async (event) => {
-      if (event.data === 'ping') {
-        socket.send('pong');
+      // Listen for messages
+      socket.addEventListener('message', async (event) => {
+        if (event.data === 'ping') {
+          socket.send('pong');
 
-      } else if (event.data.slice(0, 13) === 'client-info: ') {
-        let encrypted = event.data.slice(13);
-        let decrypted = await crpt.decrypt(encrypted, keyPair);
-        setPairInfo(decrypted);
+        } else if (event.data.slice(0, 13) === 'client-info: ') {
+          let encrypted = event.data.slice(13);
+          let decrypted = await crpt.decrypt(encrypted, keyPair);
+          setPairInfo(decrypted);
 
-      } else if (event.data === 'connected') {
-        crpt.sendPublicKey(socket!, keyPair);
+        } else if (event.data === 'connected') {
+          crpt.sendPublicKey(socket!, keyPair);
 
-      } else if (event.data.slice(0,11) === 'client-id: '){
-        let clientId = event.data.slice(11);
-        setClientId(clientId);
+        } else if (event.data.slice(0,11) === 'client-id: '){
+          let clientId = event.data.slice(11);
+          setClientId(clientId);
 
-      } else if (event.data.slice(0, 12) === 'public-key: ') {
-        let key = event.data.slice(12);
-        setPeerPublicKey(await crpt.importAndSetPeerPublicKey(key));
+        } else if (event.data.slice(0, 12) === 'public-key: ') {
+          let key = event.data.slice(12);
+          setPeerPublicKey(await crpt.importAndSetPeerPublicKey(key));
 
-      } else if (event.data.slice(0, 5) === 'msg: ') {
-        // Q: Why use msg: prefix?
-        // A: Maybe someone sends a message that starts with 'client-id: ' or 'public-key: '?
-        let encrypted = event.data.slice(5);
+        } else if (event.data.slice(0, 5) === 'msg: ') {
+          // Q: Why use msg: prefix?
+          // A: Maybe someone sends a message that starts with 'client-id: ' or 'public-key: '?
+          let encrypted = event.data.slice(5) as string;
 
-        let decryptedString = await crpt.decrypt(encrypted, keyPair);
-        setHistory((prev: any) => [...prev, 'Peer: ' + decryptedString]);
-        setChatStarted(true);
-      } else if(event.data === 'accept-pairing'){
-        setPeerAccepted(true);
-      } else if(event.data.slice(0,6) === 'file: '){
-        let encrypted = event.data.slice(6);
-        receiveFileByChunks(encrypted);
-      }
-      else{
-        //console.log('Received unknown message: ', event.data);
-      }
-    });
+          let decryptedString = "";
+          while (encrypted.length > encryptedStringLength) {
+            decryptedString = decryptedString + await crpt.decrypt(encrypted.slice(0, encryptedStringLength), keyPair);
+            encrypted = encrypted.slice(encryptedStringLength);
+          }
 
-    socket.addEventListener('error', (error) => {
-      console.error('WebSocket connection error:', error);
-    });    
+          setHistory((prev: any) => [...prev, 'Peer: ' + decryptedString]);
+          setChatStarted(true);
+        } else if(event.data === 'accept-pairing'){
+          setPeerAccepted(true);
+        } else if(event.data.slice(0,6) === 'file: '){
+          let encrypted = event.data.slice(6);
+          receiveFileByChunks(encrypted);
+        }
+        else{
+          //console.log('Received unknown message: ', event.data);
+        }
+      });
 
-    socket.addEventListener('close', (event) => {
-      if (event.reason === 'Client with this ID does not exist')
-      {
-        setError("id-not-found");
-      } else if (event.reason === "Client idle timeout reached") {
-        setError("idle-timeout-reached")
-      } else {
-        setError("server-error");
-      }
-      setDisconnect(true);
+      socket.addEventListener('error', (error) => {
+        console.error('WebSocket connection error:', error);
+      });    
+
+      socket.addEventListener('close', (event) => {
+        if (event.reason === 'Client with this ID does not exist')
+        {
+          setError("id-not-found");
+        } else if (event.reason === "Client idle timeout reached") {
+          setError("idle-timeout-reached")
+        } else {
+          setError("server-error");
+        }
+        setDisconnect(true);
     });};
 
     const receiveFileByChunks = async (encrypted: string) => {
@@ -203,12 +209,10 @@ export default function Home() {
     }
     
     const sendClientInfo = async () => {
-      console.log('Sending client info...');
       var peerName = generatePeerName();
       let encryptedString = await crpt.encrypt(peerName, peerPublicKey);
       setClientName(peerName);
       socket!.send("client-info: " + encryptedString);
-      console.log('Sent client info: ', encryptedString);
     }
 
   return (<main>
