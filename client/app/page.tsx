@@ -6,6 +6,8 @@ import './style.css'
 import * as crpt from './encryption';
 import * as pool from './pool';
 import Chat from './chat';
+import PairMenu from './pair-menu';
+import ConnectionMenu from './connection-menu';
 
 
 const serverUrl = "ws://localhost:8080/ws";
@@ -209,33 +211,10 @@ export default function Home() {
       console.log('Sent client info: ', encryptedString);
     }
 
-    const acceptPairing = async () => {
-      setPairingAccepted(true);
-      socket!.send('accept-pairing');
-      setPairInfo('');
-    }
-
-    const rejectPairing = async () => {
-      setDisconnect(true);
-      setError("Pairing was rejected. Try again.");
-    }
-
-
   return (<main>
     <div className="container">
         {status === 'disconnected' && !isConnecting &&
-        <div>
-          {error === "id-not-found" && 
-            <div className='error'>Client with this ID does not exist.</div>
-          }
-          {error === "server-error" &&
-            <div className='error'>Connection error. Please try again.</div>
-          }
-          {error === "idle-timeout-reached" && 
-            <div className='error'>Idle timeout reached. You have been disconnected.</div>
-          }
-          <button className='btn' onClick={() => setIsConnecting(true)}>Connect</button>
-        </div>
+           <ConnectionMenu setIsConnecting={setIsConnecting} error={error}/>
         }
         {status === 'disconnected' && clientId && isConnecting &&
         <div>
@@ -250,20 +229,17 @@ export default function Home() {
             <div id="status"></div>
         </div>
         {pairInfo &&
-        <div className="pair-info">
-          <p>Your name: {clientName}</p>
-          <p>Do you want to connect to this device?</p>
-          <p>Device: {pairInfo}</p>
-          <button className='btn' onClick={acceptPairing}>Yes</button>
-          <button className='btn' onClick={() => rejectPairing()}>No</button>
-        </div>
+            <PairMenu socket={socket} pairInfo={pairInfo as string}
+            setPairInfo={setPairInfo} setPairingAccepted={setPairingAccepted}
+            setDisconnect={setDisconnect} setError={setError}
+            clientName={clientName}/>
         }
 
         {(status === 'connected' || chatStarted) &&
-        <Chat socket={socket} peerPublicKey={peerPublicKey} 
-        setChatStarted={setChatStarted} disconnectClient={setDisconnect}
-        history={history} setHistory={setHistory}
-        setError={setError}/>
+            <Chat socket={socket} peerPublicKey={peerPublicKey} 
+            setChatStarted={setChatStarted} disconnectClient={setDisconnect}
+            history={history} setHistory={setHistory}
+            setError={setError}/>
         }
     </div>
 </main>)
